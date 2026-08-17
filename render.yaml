@@ -13,7 +13,7 @@ services:
     runtime: node
     repo: https://github.com/miiinniam/jiuneng-website
     plan: free
-    buildCommand: npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV

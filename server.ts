@@ -86,7 +86,7 @@ app.post('/api/logistics-consult', async (req: Request, res: Response) => {
 `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-flash-latest',
       contents: userPrompt,
       config: {
         systemInstruction: systemPrompt,
