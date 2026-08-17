@@ -1,0 +1,6 @@
+{
+  "name": "JIUNENG logistics",
+  "description": "面向中国企业的工程物流平台，聚焦工程物流、进出口报关与国际贸易，以数字化系统管理客户询价、方案设计、报价、业务实施到项目交付全过程，连接中越两地资源。提供在线询价与项目评估入口。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

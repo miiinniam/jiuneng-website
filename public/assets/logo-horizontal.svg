@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 40" width="280" height="40">
+  <!-- Orange signal dot — functional accent -->
+  <circle cx="8" cy="20" r="5" fill="#E96A26"/>
+  <!-- Company name -->
+  <text x="22" y="26" font-family="Helvetica, 'Helvetica Neue', Arial, sans-serif" font-weight="500" font-size="18" fill="#191919" letter-spacing="0.04em">JIUNENG</text>
+  <!-- Divider rule -->
+  <line x1="22" y1="32" x2="114" y2="32" stroke="#D1CDC7" stroke-width="0.5"/>
+  <!-- Tagline -->
+  <text x="22" y="39" font-family="Helvetica, 'Helvetica Neue', Arial, sans-serif" font-weight="400" font-size="7.5" fill="#8A8680" letter-spacing="0.12em">ENGINEERING LOGISTICS</text>
+</svg>

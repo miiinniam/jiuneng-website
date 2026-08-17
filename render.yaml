@@ -1,0 +1,24 @@
+# Render 声明式部署配置 —— 玖能官网 v0.4(免费层 Node 服务)
+
+# 用法:
+#   1. 把本项目推送到 GitHub 仓库(如 github.com/miiinniam/jiuneng-website)
+#   2. Render Dashboard → New → Blueprint → 选择该仓库
+#   3. Render 自动读取本文件创建服务
+#   4. 创建完成后,在 Render 服务 Settings → Environment 手动填入 GEMINI_API_KEY
+#      (sync: false 表示密钥不会从仓库同步,必须在面板填)
+
+services:
+  - type: web
+    name: jiuneng-website
+    runtime: node
+    repo: https://github.com/miiinniam/jiuneng-website
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false  # 在 Render 面板手动填写,勿提交到仓库
+      - key: APP_URL
+        sync: false  # 可选:站点公网地址,上线后可在面板填 https://<service>.onrender.com
