@@ -84,14 +84,37 @@ Render 免费实例 **15 分钟无请求即休眠**,休眠后第一个请求被�
 - `~/AppData/Local/hermes/scripts/render_keepalive.py`,每 10 分钟 GET `/api/health`
 - ⚠️ 必须用 .py 文件(Windows 上 .sh 反斜杠路径会被吞),脚本模板见 osrmpp-dev 技能
 
-## 第六步(可选):绑定 jiuneng.space 子域
+## 第六步:绑定 site.jiuneng.space(官网正式域名)
 
-根域 `jiuneng.space` 目前在 Vercel(OSRM++ 官网),**不要动根域解析**。要绑子域(如 `www.jiuneng.space` 或 `site.jiuneng.space`):
+**域名现状(2026-09-22 实测,别再猜)**:
 
-1. Render 服务 → **Settings → Custom Domains** → Add Domain → 填子域名
-2. 在域名 DNS 服务商加 CNAME:`<子域>` → `jiuneng-website.onrender.com`
-3. Render 自动签 HTTPS 证书(几分钟)
-4. 更新 `APP_URL` 环境变量 → 重部署
+| 主机 | 解析 | 服务的是 |
+|---|---|---|
+| `jiuneng.space`(根域) | `216.198.79.1`(Vercel) | OSRM++ 报价工具(标题「工程物流平台 · 在线报价」) |
+| `www.jiuneng.space` | `vercel-dns-017.com`(Vercel) | **同上,OSRM++ 报价工具** |
+| `site.jiuneng.space`(官网) | 待配置 | JIUNENG 官网(本仓库) |
+
+> ⚠️ 根域和 www **都在服务 OSRM++ 报价工具**,改这两个会让已有链接失效。官网用子域 `site.jiuneng.space`。
+> DNS 服务商是 **GoDaddy**(`ns37/ns38.domaincontrol.com`)。
+
+两步操作(都需要面板登录,agent 侧只负责验收):
+
+1. **Render** → 服务 `jiuneng-website` → **Settings → Custom Domains** → Add Domain → `site.jiuneng.space`
+2. **GoDaddy** → 域 `jiuneng.space` → DNS 记录 → 新增:
+   - 类型 `CNAME`,主机/名称 `site`,值/指向 `jiuneng-website.onrender.com`,TTL 默认(600s)
+
+> 不要加 A 记录;Render 只认 CNAME。GoDaddy 的「主机」栏填 `site`(不是 `site.jiuneng.space`)。
+
+3 分钟后验收:
+
+```bash
+nslookup site.jiuneng.space 8.8.8.8          # 应解析到 Render 的 CNAME 目标
+curl -s https://site.jiuneng.space/api/health  # {"status":"ok",...}
+curl -sI https://site.jiuneng.space/ | head -3 # HTTP/2 200 + 有效证书
+```
+
+代码侧的域名引用**已经统一指向 `https://site.jiuneng.space`**:`index.html` 的 canonical / `og:url` / JSON-LD(`url`+`logo`)、`public/sitemap.xml`、`public/robots.txt`。
+若以后要换成别的子域(如 www),改这 3 个文件里的域名 → `npm run build` → 提交推送即可(`APP_URL` 环境变量当前代码里**没有任何地方读取**,可以不设)。
 
 ## 后续更新流程(每次改代码后)
 

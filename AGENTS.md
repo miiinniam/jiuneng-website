@@ -64,7 +64,7 @@ npm run lint         # tsc --noEmit 类型检查
 - **无浏览器时怎么验证视觉**:用本机 Chrome 无头截图。⚠️ 两个坑:(1) `--window-size` 的高度会改变 `100vh`,把窗口设很高想截全页时 Hero 会撑满整张图,看不到 section;(2) 无头模式下 motion 动画循环不执行,`--dump-dom` 里所有动画元素恒为 `opacity:0`,**不能**用它判断内容可见性,要用 `--force-prefers-reduced-motion`。详见 DEVELOPMENT.md §9.6
 - **视觉分析模型会编造细节**:实测它把源码里三处一致的「纸桥坊 5 楼 R03」读成「还剑郡 6 楼 603 室」、把邮箱 `quoctejiuneng@` 读成 `quotejiuneng@`。涉及地址/编号/邮箱等事实内容**必须回源码核对**
 - **不要在服务器上跑 `npm run dev`**:HMR 端口和文件监听在无头环境会出问题,生产必须 build + start
-- **域名**:当前建议先用 `https://<service>.onrender.com` 上线;绑 `jiuneng.space` 子域(如 `www.` 或 `site.`)时在 Render Settings → Custom Domain 配置 CNAME,并注意根域 `jiuneng.space` 目前指向 Vercel(OSRM++ 官网),**不要动根域解析**
+- **域名**:官网正式域名为 **`site.jiuneng.space`**(Render Custom Domain + GoDaddy CNAME,见 DEPLOY.md 第六步)。**根域 `jiuneng.space` 和 `www.jiuneng.space` 都指向 Vercel 服务 OSRM++ 报价工具,两个都不要动**。代码里 canonical/og:url/sitemap/robots/JSON-LD 已统一指向 `https://site.jiuneng.space`,换子域要同时改这 3 个文件
 
 ## 项目历史背景
 
