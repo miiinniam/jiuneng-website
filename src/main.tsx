@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { motion, useInView, useScroll, useTransform, AnimatePresence } from 'motion/react';
+import { motion, useInView, AnimatePresence } from 'motion/react';
 import './styles.css';
 
 type Lang = 'zh' | 'vi' | 'en';
@@ -200,6 +200,8 @@ type Translation = {
     steps: string[];
     modulesTitle: string;
     modules: { title: string; body: string }[];
+    /** 平台系统截图的框内标签（顺序与 .platform-shots 中的图片一致） */
+    shotLabels: string[];
   };
   services: {
     eyebrow: string;
@@ -359,6 +361,7 @@ const translations: Record<Lang, Translation> = {
         { title: '节点追踪', body: '跟踪运输状态、关键节点和异常处理。' },
         { title: '项目归档', body: '沉淀合同、单证、结算和案例资料。' },
       ],
+      shotLabels: ['物流系统 · 项目总览', '物流系统 · 节点追踪'],
     },
     services: {
       eyebrow: '核心业务',
@@ -388,8 +391,8 @@ const translations: Record<Lang, Translation> = {
       intro: '根据货物尺寸、重量、路线条件、装卸要求和施工节点，组织专业运输方案与现场交付协调。',
       items: [
         { sector: '轨道交通', title: '铁路物资与施工设备', body: '面向城市轨道交通项目，组织铁路物资、施工设备运输与项目节点配送。', image: 'sol-rail.jpg' },
-        { sector: '基建项目', title: '工程设备与材料', body: '面向道路、桥梁等基建项目，衔接工程设备、材料的跨境运输与现场吊装交付。', image: 'sol-infra.png' },
-        { sector: '电力项目', title: '电力设备运输', body: '面向火力发电及配套工程，组织变压器等大型电力设备运输与现场协调。', image: 'sol-power.png' },
+        { sector: '基建项目', title: '工程设备与材料', body: '面向道路、桥梁等基建项目，衔接工程设备、材料的跨境运输与现场吊装交付。', image: 'sol-infra.jpg' },
+        { sector: '电力项目', title: '电力设备运输', body: '面向火力发电及配套工程，组织变压器等大型电力设备运输与现场协调。', image: 'sol-power.jpg' },
         { sector: '新能源', title: '风电叶片与塔筒', body: '面向风力发电项目，使用专业车辆运输风机叶片、塔筒及大型设备。', image: 'sol-tower.jpg' },
       ],
     },
@@ -399,8 +402,8 @@ const translations: Record<Lang, Translation> = {
       intro: '针对新能源与大型工程设备运输需求，玖能配备专业车辆，并根据项目路线、设备尺寸和现场条件匹配运输资源。',
       items: [
         { title: '风力风机运输特种车', body: '用于风机设备与大型部件的工程运输。', spec: '适用：风机设备 / 大件部件', image: 'vehicle-fleet.jpg' },
-        { title: '风机叶片举升车', body: '应对复杂道路条件下的风机叶片运输。', spec: '适用：叶片 / 复杂路况', image: 'vehicle-blade.png' },
-        { title: '配套运输资源', body: '根据项目路线、设备尺寸和现场条件匹配运输车辆与资源。', spec: '按项目匹配', image: 'sol-infra.png' },
+        { title: '风机叶片举升车', body: '应对复杂道路条件下的风机叶片运输。', spec: '适用：叶片 / 复杂路况', image: 'vehicle-blade.jpg' },
+        { title: '配套运输资源', body: '根据项目路线、设备尺寸和现场条件匹配运输车辆与资源。', spec: '按项目匹配', image: 'sol-infra.jpg' },
       ],
     },
     cases: {
@@ -409,7 +412,7 @@ const translations: Record<Lang, Translation> = {
       intro: '以下为玖能参与的代表性工程物流项目类型，展示复杂跨境工程的执行能力。',
       items: [
         { title: '胡志明二号线', type: '城市轨道交通工程物流', body: '参与城市轨道交通项目工程物流，组织铁路与施工设备运输衔接。', tags: ['轨道交通', '工程物流'], image: 'sol-rail.jpg' },
-        { title: '河内地铁 1 号线', type: '城市轨道交通工程物流', body: '参与城市轨道交通项目工程物流，协调跨境运输与项目节点。', tags: ['轨道交通', '跨境衔接'], image: 'case-portrail.png' },
+        { title: '河内地铁 1 号线', type: '城市轨道交通工程物流', body: '参与城市轨道交通项目工程物流，协调跨境运输与项目节点。', tags: ['轨道交通', '跨境衔接'], image: 'case-portrail.jpg' },
         { title: '越南风力发电项目', type: '新能源工程物流', body: '参与多个越南风力发电项目，使用专业车辆运输风机叶片、塔筒等大型设备。', tags: ['新能源', '大件运输'], image: 'sol-tower.jpg' },
       ],
       note: '项目以类型与服务范围描述。具体客户名称、照片与数据将在取得授权与核验后公开。',
@@ -597,6 +600,7 @@ const translations: Record<Lang, Translation> = {
         { title: 'Theo dõi mốc', body: 'Theo dõi trạng thái vận chuyển, mốc then chốt và xử lý bất thường.' },
         { title: 'Lưu trữ dự án', body: 'Tích lũy hợp đồng, chứng từ, quyết toán và hồ sơ dự án.' },
       ],
+      shotLabels: ['Hệ thống logistics · Tổng quan', 'Hệ thống logistics · Theo dõi mốc'],
     },
     services: {
       eyebrow: 'Mảng kinh doanh cốt lõi',
@@ -626,8 +630,8 @@ const translations: Record<Lang, Translation> = {
       intro: 'Tổ chức phương án vận chuyển chuyên nghiệp và phối hợp giao hiện trường theo kích thước, trọng lượng, tuyến đường và mốc thi công.',
       items: [
         { sector: 'Đường sắt đô thị', title: 'Vật tư & thiết bị thi công', body: 'Cho dự án đường sắt đô thị: tổ chức vận chuyển vật tư, thiết bị thi công và phân phối theo mốc.', image: 'sol-rail.jpg' },
-        { sector: 'Hạ tầng', title: 'Thiết bị & vật liệu', body: 'Cho dự án đường, cầu: kết nối vận chuyển thiết bị, vật liệu và cẩu hạ tại hiện trường.', image: 'sol-infra.png' },
-        { sector: 'Điện', title: 'Vận chuyển thiết bị điện', body: 'Cho nhà máy nhiệt điện: vận chuyển máy biến áp và thiết bị điện lớn, phối hợp hiện trường.', image: 'sol-power.png' },
+        { sector: 'Hạ tầng', title: 'Thiết bị & vật liệu', body: 'Cho dự án đường, cầu: kết nối vận chuyển thiết bị, vật liệu và cẩu hạ tại hiện trường.', image: 'sol-infra.jpg' },
+        { sector: 'Điện', title: 'Vận chuyển thiết bị điện', body: 'Cho nhà máy nhiệt điện: vận chuyển máy biến áp và thiết bị điện lớn, phối hợp hiện trường.', image: 'sol-power.jpg' },
         { sector: 'Năng lượng mới', title: 'Cánh & tháp điện gió', body: 'Cho dự án điện gió: dùng xe chuyên dụng vận chuyển cánh quạt, tháp và thiết bị lớn.', image: 'sol-tower.jpg' },
       ],
     },
@@ -637,8 +641,8 @@ const translations: Record<Lang, Translation> = {
       intro: 'Cho nhu cầu vận chuyển thiết bị năng lượng mới và công trình lớn, JIUNENG trang bị xe chuyên dụng và khớp nguồn lực theo tuyến, kích thước và điều kiện hiện trường.',
       items: [
         { title: 'Xe chuyên dụng vận chuyển tua-bin gió', body: 'Dùng cho thiết bị tua-bin và bộ phận lớn.', spec: 'Phù hợp: tua-bin / bộ phận lớn', image: 'vehicle-fleet.jpg' },
-        { title: 'Xe nâng cánh tua-bin', body: 'Đáp ứng vận chuyển cánh quạt trên đường khó.', spec: 'Phù hợp: cánh quạt / đường khó', image: 'vehicle-blade.png' },
-        { title: 'Nguồn lực vận chuyển bổ trợ', body: 'Khớp xe và nguồn lực theo tuyến, kích thước và hiện trường.', spec: 'Theo dự án', image: 'sol-infra.png' },
+        { title: 'Xe nâng cánh tua-bin', body: 'Đáp ứng vận chuyển cánh quạt trên đường khó.', spec: 'Phù hợp: cánh quạt / đường khó', image: 'vehicle-blade.jpg' },
+        { title: 'Nguồn lực vận chuyển bổ trợ', body: 'Khớp xe và nguồn lực theo tuyến, kích thước và hiện trường.', spec: 'Theo dự án', image: 'sol-infra.jpg' },
       ],
     },
     cases: {
@@ -647,7 +651,7 @@ const translations: Record<Lang, Translation> = {
       intro: 'Các loại dự án logistics công trình tiêu biểu mà JIUNENG tham gia, thể hiện năng lực thực thi xuyên biên giới.',
       items: [
         { title: 'Tuyến số 2 TP.HCM', type: 'Logistics đường sắt đô thị', body: 'Tham gia logistics dự án đường sắt đô thị, tổ chức kết nối vận chuyển vật tư và thiết bị thi công.', tags: ['Đường sắt', 'Logistics công trình'], image: 'sol-rail.jpg' },
-        { title: 'Metro Hà Nội tuyến 1', type: 'Logistics đường sắt đô thị', body: 'Tham gia logistics dự án đường sắt đô thị, phối hợp vận chuyển xuyên biên giới và mốc dự án.', tags: ['Đường sắt', 'Kết nối xuyên biên'], image: 'case-portrail.png' },
+        { title: 'Metro Hà Nội tuyến 1', type: 'Logistics đường sắt đô thị', body: 'Tham gia logistics dự án đường sắt đô thị, phối hợp vận chuyển xuyên biên giới và mốc dự án.', tags: ['Đường sắt', 'Kết nối xuyên biên'], image: 'case-portrail.jpg' },
         { title: 'Dự án điện gió Việt Nam', type: 'Logistics năng lượng mới', body: 'Tham gia nhiều dự án điện gió, dùng xe chuyên dụng vận chuyển cánh quạt, tháp và thiết bị lớn.', tags: ['Năng lượng mới', 'Hàng quá khổ'], image: 'sol-tower.jpg' },
       ],
       note: 'Dự án mô tả theo loại hình và phạm vi dịch vụ. Tên khách hàng, hình ảnh và số liệu cụ thể sẽ công khai sau khi được ủy quyền và xác minh.',
@@ -835,6 +839,7 @@ const translations: Record<Lang, Translation> = {
         { title: 'Milestone tracking', body: 'Track transport status, key milestones, and exception handling.' },
         { title: 'Project archive', body: 'Accumulate contracts, documents, settlements, and case records.' },
       ],
+      shotLabels: ['Logistics system · Project overview', 'Logistics system · Milestone tracking'],
     },
     services: {
       eyebrow: 'Core businesses',
@@ -864,8 +869,8 @@ const translations: Record<Lang, Translation> = {
       intro: 'We organize professional transport plans and on-site delivery based on cargo dimensions, weight, route conditions, handling needs, and construction milestones.',
       items: [
         { sector: 'Rail transit', title: 'Railway materials & equipment', body: 'For urban rail transit: railway materials, construction equipment transport, and milestone distribution.', image: 'sol-rail.jpg' },
-        { sector: 'Infrastructure', title: 'Equipment & materials', body: 'For road and bridge projects: cross-border transport of equipment and materials with on-site lifting.', image: 'sol-infra.png' },
-        { sector: 'Power', title: 'Power equipment transport', body: 'For thermal power and supporting works: transformer and large power-equipment transport with on-site coordination.', image: 'sol-power.png' },
+        { sector: 'Infrastructure', title: 'Equipment & materials', body: 'For road and bridge projects: cross-border transport of equipment and materials with on-site lifting.', image: 'sol-infra.jpg' },
+        { sector: 'Power', title: 'Power equipment transport', body: 'For thermal power and supporting works: transformer and large power-equipment transport with on-site coordination.', image: 'sol-power.jpg' },
         { sector: 'New energy', title: 'Wind blades & towers', body: 'For wind power projects: specialized vehicles transporting wind blades, towers, and large equipment.', image: 'sol-tower.jpg' },
       ],
     },
@@ -875,8 +880,8 @@ const translations: Record<Lang, Translation> = {
       intro: 'For new-energy and large engineering equipment, JIUNENG provides specialized vehicles and matches resources to project route, equipment size, and site conditions.',
       items: [
         { title: 'Wind-turbine transport vehicle', body: 'For turbine equipment and large components.', spec: 'For: turbines / large parts', image: 'vehicle-fleet.jpg' },
-        { title: 'Wind-blade lifting vehicle', body: 'Handles blade transport on complex road conditions.', spec: 'For: blades / complex roads', image: 'vehicle-blade.png' },
-        { title: 'Supporting transport resources', body: 'Match vehicles and resources by route, equipment size, and site conditions.', spec: 'Matched per project', image: 'sol-infra.png' },
+        { title: 'Wind-blade lifting vehicle', body: 'Handles blade transport on complex road conditions.', spec: 'For: blades / complex roads', image: 'vehicle-blade.jpg' },
+        { title: 'Supporting transport resources', body: 'Match vehicles and resources by route, equipment size, and site conditions.', spec: 'Matched per project', image: 'sol-infra.jpg' },
       ],
     },
     cases: {
@@ -885,7 +890,7 @@ const translations: Record<Lang, Translation> = {
       intro: 'Representative engineering logistics project types JIUNENG has participated in, showing cross-border execution capability.',
       items: [
         { title: 'HCMC Metro Line 2', type: 'Urban rail engineering logistics', body: 'Participated in urban rail project logistics, organizing railway and construction equipment transport linkage.', tags: ['Rail transit', 'Engineering logistics'], image: 'sol-rail.jpg' },
-        { title: 'Hanoi Metro Line 1', type: 'Urban rail engineering logistics', body: 'Participated in urban rail project logistics, coordinating cross-border transport and project milestones.', tags: ['Rail transit', 'Cross-border'], image: 'case-portrail.png' },
+        { title: 'Hanoi Metro Line 1', type: 'Urban rail engineering logistics', body: 'Participated in urban rail project logistics, coordinating cross-border transport and project milestones.', tags: ['Rail transit', 'Cross-border'], image: 'case-portrail.jpg' },
         { title: 'Vietnam wind power projects', type: 'New-energy engineering logistics', body: 'Participated in multiple Vietnam wind power projects, transporting blades, towers, and large equipment with specialized vehicles.', tags: ['New energy', 'Heavy cargo'], image: 'sol-tower.jpg' },
       ],
       note: 'Projects are described by type and service scope. Specific client names, photos, and data will be published after authorization and verification.',
@@ -1019,6 +1024,23 @@ const EntityCard: React.FC<{ entity: Entity }> = ({ entity }) => {
   );
 };
 
+function usePrefersReducedMotion() {
+  /* 首帧就同步读取媒体查询：若放到 useEffect 里，首帧 reduced 恒为 false，
+     会让「减少动效」用户也先被 motion 套上 opacity:0 的初始态，
+     既闪一下又依赖动画循环才能恢复。惰性初始化避免这个假阴性。 */
+  const [reduced, setReduced] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReduced(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  return reduced;
+}
+
 /* ── Animated section wrapper ── */
 const Section: React.FC<{
   id?: string;
@@ -1029,80 +1051,71 @@ const Section: React.FC<{
 }> = ({ id, className, children, delay = 0, direction = 'up' }) => {
   const ref = useRef<HTMLElement>(null);
   const isInView = useInView(ref, { once: true, margin: '-60px' });
+  const reduceMotion = usePrefersReducedMotion();
+  const [forced, setForced] = useState(false);
+
+  /* 安全网：入场动画是装饰性的，但它的初始态是 opacity:0。
+     一旦 IntersectionObserver 回调未触发（爬虫/截图工具渲染、IO 异常、rAF 被节流），
+     整个 section 会永久停在 opacity:0 —— 页面首屏以下全白。
+     装饰效果不该有能力让内容消失，所以这里用 getBoundingClientRect 兜一条
+     独立的显形路径：只要元素确实进了视口，就强制显形。
+     IO 正常工作时 isInView 先变 true，本 effect 随即卸载，不影响原有动画。 */
+  useEffect(() => {
+    if (isInView || forced) return;
+    const check = () => {
+      const el = ref.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const vh = window.innerHeight || document.documentElement.clientHeight;
+      if (rect.top < vh * 0.92 && rect.bottom > 0) setForced(true);
+    };
+    check();
+    window.addEventListener('scroll', check, { passive: true });
+    window.addEventListener('resize', check);
+    return () => {
+      window.removeEventListener('scroll', check);
+      window.removeEventListener('resize', check);
+    };
+  }, [isInView, forced]);
+
   const variants = {
-    up: { opacity: 0, y: 24 },
-    left: { opacity: 0, x: -24 },
-    right: { opacity: 0, x: 24 },
+    up: { opacity: 0, y: 20 },
+    left: { opacity: 0, x: -20 },
+    right: { opacity: 0, x: 20 },
     scale: { opacity: 0 },
   };
+  const shown = reduceMotion || isInView || forced;
   return (
     <motion.section
       id={id}
       ref={ref}
       className={className}
-      initial={variants[direction]}
-      animate={isInView ? { opacity: 1, x: 0, y: 0 } : variants[direction]}
-      transition={{ duration: 0.4, delay, ease: [0.3, 0, 0, 1] }}
+      initial={reduceMotion ? false : variants[direction]}
+      animate={shown ? { opacity: 1, x: 0, y: 0 } : variants[direction]}
+      transition={reduceMotion ? { duration: 0 } : { duration: 0.45, delay, ease: [0.22, 1, 0.36, 1] }}
     >
       {children}
     </motion.section>
   );
 };
 
-/* ── Animated list item ── */
-const StaggerItem: React.FC<{
-  index: number;
-  children: React.ReactNode;
-  className?: string;
-}> = ({ index, children, className }) => {
-  const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once: true, margin: '-40px' });
-  return (
-    <motion.div
-      ref={ref}
-      className={className}
-      initial={{ opacity: 0, y: 16 }}
-      animate={isInView ? { opacity: 1, y: 0 } : {}}
-      transition={{ duration: 0.3, delay: index * 0.06, ease: [0.3, 0, 0, 1] }}
-    >
-      {children}
-    </motion.div>
-  );
-};
-
-/* ── Animated counter ── */
-const AnimatedCounter: React.FC<{ value: string; label: string }> = ({ value, label }) => {
-  const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once: true, margin: '-40px' });
-  return (
-    <motion.div
-      ref={ref}
-      initial={{ opacity: 0 }}
-      animate={isInView ? { opacity: 1 } : {}}
-      transition={{ duration: 0.3 }}
-    >
-      <motion.strong
-        initial={{ opacity: 0, y: 6 }}
-        animate={isInView ? { opacity: 1, y: 0 } : {}}
-        transition={{ duration: 0.25, delay: 0.1 }}
-      >
-        {value}
-      </motion.strong>
-      <motion.span
-        initial={{ opacity: 0 }}
-        animate={isInView ? { opacity: 1 } : {}}
-        transition={{ duration: 0.2, delay: 0.2 }}
-      >
-        {label}
-      </motion.span>
-    </motion.div>
-  );
-};
+/* ── Hero stat item ──
+   纯展示元素：入场淡入由父级 .hero-stats 统一负责。
+   此处不再单独用 useInView 门控 —— 那会让数字依赖 IntersectionObserver 回调，
+   一旦回调未触发（爬虫渲染 / rAF 被节流 / IO 异常）数字就永远停在 opacity:0，
+   而这里并没有计数动画需要它门控，收益为零、风险却是整条统计栏空白。 */
+const AnimatedCounter: React.FC<{ value: string; label: string }> = ({ value, label }) => (
+  <div>
+    <strong>{value}</strong>
+    <span>{label}</span>
+  </div>
+);
 
 function App() {
   const [lang, setLang] = useState<Lang>(getInitialLang);
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const reduceMotion = usePrefersReducedMotion();
   const [form, setForm] = useState({
     name: '',
     company: '',
@@ -1140,8 +1153,10 @@ function App() {
     setForm((current) => ({ ...current, inquiryType: translations[lang].ai.types[0] }));
   }, [lang, t.meta.description, t.meta.title]);
 
-  const heroImage = useMemo(() => `${imageBase}hero-wind-tower.png`, []);
-  const logo = `${imageBase}logo-horizontal.svg`;
+  const heroImage = useMemo(() => `${imageBase}hero-wind-tower.jpg`, []);
+  /* v0.6：全站改浅色后，导航默认态不再压在深色 Hero 上，
+     logo 固定用彩色版（原逻辑按滚动状态在白色版 / 彩色版之间切换）。 */
+  const logoColor = `${imageBase}logo-horizontal.png`;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1175,9 +1190,10 @@ function App() {
 
   return (
     <div className="site-shell">
+      <a className="skip-link" href="#top">Skip to content</a>
       <header className={`nav ${scrolled ? 'scrolled' : ''}`}>
         <a className="brand" href="#top" aria-label={t.common.company}>
-          <img className="brand-logo" src={logo} alt={t.common.company} />
+          <img className="brand-logo" src={logoColor} alt={t.common.company} loading="eager" decoding="async" />
         </a>
 
         <nav className="desktop-links" aria-label="Primary">
@@ -1197,7 +1213,10 @@ function App() {
               </button>
             ))}
           </div>
-          <button className="menu-button" onClick={() => setMenuOpen((open) => !open)} type="button" aria-label="Menu">
+          <a className="button primary nav-cta" href="#consult">
+            {t.hero.primary}
+          </a>
+          <button className="menu-button" onClick={() => setMenuOpen((open) => !open)} type="button" aria-label="Menu" aria-expanded={menuOpen}>
             {menuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
@@ -1207,16 +1226,19 @@ function App() {
         {menuOpen ? (
           <motion.div
             className="mobile-menu"
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.15, ease: [0.3, 0, 0, 1] }}
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: -6 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98, y: -4 }}
+            transition={reduceMotion ? { duration: 0.12 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           >
             {t.nav.map((item) => (
               <a key={item.href} href={item.href} onClick={() => setMenuOpen(false)}>
                 {item.label}
               </a>
             ))}
+            <a href="#consult" onClick={() => setMenuOpen(false)}>
+              {t.hero.primary}
+            </a>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -1227,19 +1249,19 @@ function App() {
           <motion.div
             className="hero-media"
             aria-hidden="true"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, ease: [0.3, 0, 0, 1] }}
+            initial={reduceMotion ? false : { opacity: 0, scale: 1.06 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
           >
-            <img src={heroImage} alt="" />
+            <img src={heroImage} alt="" loading="eager" decoding="async" fetchPriority="high" />
           </motion.div>
           <div className="hero-overlay" />
           <div className="hero-content">
             <motion.div
               className="hero-copy"
-              initial={{ opacity: 0, y: 20 }}
+              initial={reduceMotion ? false : { opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, ease: [0.3, 0, 0, 1] }}
+              transition={reduceMotion ? { duration: 0 } : { duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
             >
               <p className="eyebrow">{t.hero.eyebrow}</p>
               <h1>{t.hero.title}</h1>
@@ -1257,9 +1279,9 @@ function App() {
 
             <motion.aside
               className="hero-panel"
-              initial={{ opacity: 0, y: 16 }}
+              initial={reduceMotion ? false : { opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.2, ease: [0.3, 0, 0, 1] }}
+              transition={reduceMotion ? { duration: 0 } : { duration: 0.45, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
             >
               <div className="panel-top">
                 <span className="status-dot" />
@@ -1277,9 +1299,9 @@ function App() {
 
             <motion.div
               className="hero-stats"
-              initial={{ opacity: 0, y: 12 }}
+              initial={reduceMotion ? false : { opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, delay: 0.35, ease: [0.3, 0, 0, 1] }}
+              transition={reduceMotion ? { duration: 0 } : { duration: 0.4, delay: 0.28, ease: [0.22, 1, 0.36, 1] }}
             >
               {t.hero.stats.map((stat) => (
                 <AnimatedCounter key={stat.label} value={stat.value} label={stat.label} />
@@ -1308,7 +1330,7 @@ function App() {
               </div>
             </div>
             <div className="about-media">
-              <img src={`${imageBase}team-collab.png`} alt="" />
+              <img src={`${imageBase}team-collab.jpg`} alt="" loading="lazy" decoding="async" />
             </div>
           </div>
 
@@ -1357,8 +1379,24 @@ function App() {
                 })}
               </div>
               <div className="platform-shots">
-                <img src={`${imageBase}system-overview.png`} alt="" />
-                <img src={`${imageBase}system-tracking.png`} alt="" />
+                {/* 浅色浏览器框：截图为深色仪表盘时，套框后读作「系统界面截图」
+                    而不是页面上的一块暗色区域；换成浅色截图后同样适用。 */}
+                {[
+                  { src: `${imageBase}system-overview.jpg`, label: t.platform.shotLabels[0] },
+                  { src: `${imageBase}system-tracking.jpg`, label: t.platform.shotLabels[1] },
+                ].map((shot) => (
+                  <figure className="shot-frame" key={shot.src}>
+                    <div className="shot-bar">
+                      <span className="shot-dots" aria-hidden="true">
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                      <span className="shot-label">{shot.label}</span>
+                    </div>
+                    <img src={shot.src} alt={shot.label} loading="lazy" decoding="async" />
+                  </figure>
+                ))}
               </div>
             </div>
           </div>
@@ -1396,7 +1434,7 @@ function App() {
                 const SolutionIcon = solutionIcons[index];
                 return (
                   <article className="solution-card" key={item.sector}>
-                    <img src={`${imageBase}${item.image}`} alt={item.title} />
+                    <img src={`${imageBase}${item.image}`} alt={item.title} loading="lazy" decoding="async" />
                     <div className="body">
                       <span>
                         <SolutionIcon size={14} /> {item.sector}
@@ -1417,7 +1455,7 @@ function App() {
           <div className="vehicles-grid">
             {t.vehicles.items.map((item) => (
               <article className="vehicle-card" key={item.title}>
-                <img src={`${imageBase}${item.image}`} alt={item.title} />
+                <img src={`${imageBase}${item.image}`} alt={item.title} loading="lazy" decoding="async" />
                 <div className="body">
                   <h3>{item.title}</h3>
                   <p>{item.body}</p>
@@ -1434,7 +1472,7 @@ function App() {
           <div className="case-grid">
             {t.cases.items.map((item) => (
               <article className="case-card" key={item.title}>
-                <img src={`${imageBase}${item.image}`} alt={item.title} />
+                <img src={`${imageBase}${item.image}`} alt={item.title} loading="lazy" decoding="async" />
                 <div className="body">
                   <span>{item.type}</span>
                   <h3>{item.title}</h3>
@@ -1590,7 +1628,7 @@ function App() {
 
       <footer>
         <div className="footer-brand">
-          <img src={logo} alt={t.common.company} />
+          <img src={logoColor} alt={t.common.company} loading="lazy" decoding="async" />
           <span>{t.footer.intro}</span>
           <small>{t.footer.legal}</small>
         </div>

@@ -1,0 +1,5 @@
+# https://jiuneng.space/robots.txt
+User-agent: *
+Allow: /
+
+Sitemap: https://jiuneng.space/sitemap.xml
