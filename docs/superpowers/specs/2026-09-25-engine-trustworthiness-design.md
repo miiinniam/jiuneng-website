@@ -109,7 +109,7 @@ flowchart LR
 - 后台探针：进程启动即开始，每 60s 探一次引擎 `/health`，结果（`ok` / `at` / `ms` / `reason`）存内存
 - `GET /api/health`：**保持轻量、永远快速返回 200**，响应体加 `engine: { configured, base(仅域名), lastProbe: {ok, at, ms} }`；不阻塞、不实时探测（UptimeRobot 保活依赖它稳定）
 - `GET /api/health?deep=1`：实时探测（3s 超时）；引擎不可达 → `status: "degraded"` + `engine.reason`（超时 / 连接失败 / 状态码）
-- 兼容性：原有字段 `status` / `time` 保留；`status` 仅在没有配置引擎或深探测失败时才可能为 `degraded`，轻量模式默认 `ok`
+- 兼容性：原有字段 `status` / `time` 保留；**`status` 语义（与 §5、验收 #3 一致，以此为准）**：未配置引擎 → `ok`（不算异常）；已配置且**后台探针或深探测失败** → `degraded`（轻量档读缓存、深探测实时）。轻量档在依赖健康时当然也是 `ok`——但**不是"轻量模式默认 ok"**：它如实跟随探针结果，这正是本切片要修的东西（旧实现无条件 `ok`）
 
 **(c) 参数异常**：A 阶段由 A1 脚本的退出码 + 日志承担，不引入告警通道
 
@@ -137,7 +137,7 @@ flowchart LR
 
 | 接口 | 变化 | 契约 |
 |---|---|---|
-| `GET /api/health` | 扩展 | `{status: "ok"\|"degraded", time, engine: {configured: bool, base: string\|null, lastProbe: {ok: bool, at: string\|null, ms: number\|null, reason?: string}}}` |
+| `GET /api/health` | 扩展 | `{status: "ok"\|"degraded", time, engine: {configured: bool, base: string\|null, lastProbe: {ok: boolean\|null, at: string\|null, ms: number\|null, reason?: string}}}` —— **首个探针未回包前是 `{ok:null, at:null, ms:null}`，不得写成 `lastProbe: null`**（按对象消费的调用方会拿到 undefined；且"没探过"不能被读成 ok） |
 | `GET /api/health?deep=1` | 新增 | 同上，但 `engine.lastProbe` 为本次实时结果，超时 3s |
 | `server/osrmQuote.ts` | 导出 | `probeEngine(timeoutMs = 3000): Promise<{ok: boolean, ms: number, reason?: string}>` —— 与 `runQuote` **同模块**，复用既有的 `engineBase()` 与超时处理（`engineBase` 保持模块私有，不对外导出，避免出现第二套引擎地址解析） |
 | `npm run engine:audit` | 新增 | 退出码 0 = 全部关键字段齐备；非 0 = 有缺项（详见 stdout） |
@@ -156,6 +156,10 @@ flowchart LR
 | **不变式** | **`/health` 必须保持免鉴权**。若未来给 `/health` 加鉴权，探测会以 `status_401` 把健康服务误报为 `degraded`；网关的 `KEY_FREE` 集合（`GET /health`、`GET /gateway/health`）是这条不变式的落点 |
 | 不发密钥 | 探测**不发送** `X-API-Key`（与上面的免鉴权不变式配套）；失败时**不回传** `error.message`（含完整 URL），不打印任何 URL，避免探测自身成为信息泄漏点 |
 | 覆盖要求 | 验收脚本必须覆盖四支中至少三支（`unreachable` / `not_configured` / `timeout`）+ 三种 base 写法（根地址 / 根地址带尾斜杠 / 完整 `.../api/v1`）等价性；断言必须**钉住具体 reason 取值**（仅断言"有 reason"会放过分类反转，已由变异实验证实） |
+
+**已知取舍（"假绿面"，运维必须知道）**：因为 §4.1 的不变式要求 `/health` 免鉴权、且探测不发 `X-API-Key`，**密钥配置错误时 `/health` 仍会报 ok**（实测：健康 `ok=true` 同时 `/api/osrm-quote` 返回 `engine_error` 401）。这是有意取舍，不是缺陷；代价是**「健康 ok」不等于「密钥正确」**，排查时必须另测一条真实测算（`python scripts/probe-quote-api.py` 就是干这个的）。同理：健康检查也不能替代业务链路的端到端验证。
+
+**同理（探测自身不得成为新的失败面）**：探针与业务请求**共用引擎的 IP 限流额度**，所以 interval 必须归一 + 夹下限（实测失控时 3 秒上千次会把额度吃光，客户测算直接吃 429）；`?deep=1` 免鉴权，必须做在途合并（否则匿名并发可 1:1 放大成对引擎的外打）。
 
 **T2 实测取证（2026-09-25，`scripts/verify-health.py` 全绿跑出的真实结果）**：本机站点 base → 网关 `18001`。
 

@@ -335,6 +335,21 @@ git add server.ts scripts/verify-health.py
 git commit -m "feat(health): /api/health 如实反映引擎状态（后台探针 + deep=1 实时探测）"
 ```
 
+### T2 评审后追加要求（2026-09-25 双评审，**优先级高于上面 Step 4/5 原文**）
+
+1. **报告字段**：`lastProbe` 首探前是 `{ok:null, at:null, ms:null}`（不是 `null`）；`at` 取探针**结束**时刻；顶层 `time` 同理。
+2. **探针不得成为新的失败面**：`tickProbe()` 必须自带 `try/catch`（未捕获拒绝会**带走整个进程**，实测 exit 1）；`HEALTH_PROBE_MS` 归一 + 下限 1s，非有限/≤0 的**原始值要 `console.warn`**（否则运维永远看不出自己的值被拒）；`?deep=1` 必须**在途合并**（匿名并发不得 1:1 放大成对引擎的外打），且**不做时间缓存**（否则破坏"杀了依赖立刻 degraded"）。
+3. **`verify-health.py` 的破坏性与假绿必须消掉（T2 收尾硬门槛）**：
+   - 引擎密钥**必填、无默认值**；重启站点后必须加一条真实测算断言（`!= 401`）——否则密钥错时会打"全部通过"而客户测算已经 401；
+   - 杀进程前**校验 CommandLine 身份**；只对**回环** base 做杀进程实验；③ 只在 base 指向 `18000` 时才杀它（否则会杀本机 3300 自己）；
+   - `try/finally + atexit + SIGINT`，只恢复**原本在跑**的服务；
+   - 断言**钉具体取值**（`reason == 'unreachable'`，不是"有 reason"）；
+   - `PY` / `ENGINE_CWD` 可用环境变量覆盖；`package.json` 加 `verify:health`。
+4. **§⑥（env 边界回归）自身退出码必须稳定为 0**：假依赖用**非 daemon** 线程 + `shutdown()`→`server_close()`→`join()`，并重载 `handle_error` 静默（实现在我本机跑出过 `Fatal Python error: _enter_buffered_busy` → **EXIT=127**，即在断言全过时脚本仍报失败）。验收方式：**连跑两次并贴出两次 `echo $?`**。
+5. **命令坑**：上面 Step 4 的 `node dist/server.cjs &` 在本机（git-bash）**必挂**（只输出 `stdin is not a tty`，exit 1）——改用 PowerShell `Start-Process` 分离启动，再用 `curl` 确认端口确属该 PID。
+6. **反向自证（缺一不可）**：① 用**错的**密钥跑脚本必须**快速失败**、不得打印"全部通过"；② 把 `probeEngine` 临时替换为必抛错版本 → 站点**存活**且日志出现 tick 失败 → 还原后 `git diff` 为空。
+7. **已知取舍要写进文档**（不是缺陷）：因 `/health` 免鉴权 + 探测不发密钥，**密钥错时 `/health` 仍 ok** —— 「健康 ok」不等于「密钥正确」，排查必须另测真实测算；探针与业务**共用引擎 IP 限流额度**（实测失控时客户测算直接吃 429）。
+
 ---
 
 ## Task 3: `npm run stack` —— 三服务守护（本机崩溃自恢复）
