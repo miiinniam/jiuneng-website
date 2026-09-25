@@ -48,47 +48,121 @@ function getGeminiClient(): GoogleGenAI {
 // API: Health probe —— 如实反映依赖状态。
 // 轻量模式必须永远快、永远 200（UptimeRobot 保活依赖它）；深探测只在 ?deep=1 时实时打引擎。
 // 环境变量：HEALTH_PROBE_MS（后台探查间隔，默认 60s）、HEALTH_DEEP_TIMEOUT_MS（deep 预算，默认 3s）、
-//          HEALTH_PROBE_TIMEOUT_MS（后台探查预算，默认 5s）。预算归一由 probeEngine 负责（NaN/0/负数回落默认）。
-const PROBE_INTERVAL_MS = Number(process.env.HEALTH_PROBE_MS ?? 60_000);
-const DEEP_TIMEOUT_MS = Number(process.env.HEALTH_DEEP_TIMEOUT_MS ?? 3_000);
-const PROBE_TIMEOUT_MS = Number(process.env.HEALTH_PROBE_TIMEOUT_MS ?? 5_000);
+//          HEALTH_PROBE_TIMEOUT_MS（后台探查预算，默认 5s）。
+// ⚠️ 取数必须归一 + 夹下限：`Number('abc')`/`Number('')` 分别得到 NaN/0，直接喂给 setInterval 会退化成
+//    1ms 忙循环——实测 3 秒内把引擎打了 1600+ 次，把引擎自带的 IP 限流额度吃光，**客户点「快速测算」就会吃 429**。
+//    所以：非有限值或 ≤0 → 回落默认；再按下限夹紧（间隔最低 1s，预算最低 200ms）。
+function positiveEnvMs(name: string, fallback: number, min: number): number {
+  const rawStr = process.env[name];
+  if (rawStr === undefined) return fallback;                 // 未配置：用默认值，不必告警
+  const raw = Number(rawStr);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    // 不静默回落：把被拒的原始字符串打出来，运维才知道自己写的值没生效、实际用的是哪个
+    console.warn(`[health] 环境变量 ${name}=${JSON.stringify(rawStr)} 不是有限正值，回落到默认 ${fallback}ms`);
+    return fallback;
+  }
+  if (raw < min) {
+    console.warn(`[health] 环境变量 ${name}=${JSON.stringify(rawStr)} 低于下限，夹紧到 ${min}ms`);
+    return min;
+  }
+  return raw;
+}
 
-type LastProbe = { ok: boolean; at: string; ms: number; reason?: string };
-let lastProbe: LastProbe | null = null;
+const PROBE_INTERVAL_MS = positiveEnvMs('HEALTH_PROBE_MS', 60_000, 1_000);
+const DEEP_TIMEOUT_MS = positiveEnvMs('HEALTH_DEEP_TIMEOUT_MS', 3_000, 200);
+const PROBE_TIMEOUT_MS = positiveEnvMs('HEALTH_PROBE_TIMEOUT_MS', 5_000, 200);
+
+/**
+ * ok/at/ms 在**首个探针回包之前**一律为 null —— 规格 §4 要求 lastProbe 是对象、字段可空，
+ * 不得整体为 null（否则「还没探过」和「没这个字段」不可区分）。
+ * ok 只允许 boolean | null，绝不用 0/'' 之类拿真值混淆「未知」与「结果」。
+ */
+type LastProbe = { ok: boolean | null; at: string | null; ms: number | null; reason?: string };
+let lastProbe: LastProbe = { ok: null, at: null, ms: null };
+/** 只在状态跳变时打日志，避免 60s 一条刷屏（运维/告警靠日志看依赖状态）。 */
+let lastLoggedOk: boolean | null = null;
 
 async function tickProbe(): Promise<void> {
   const r = await probeEngine(PROBE_TIMEOUT_MS);
   lastProbe = { ok: r.ok, at: new Date().toISOString(), ms: r.ms, ...(r.reason ? { reason: r.reason } : {}) };
+  if (lastLoggedOk === null || lastLoggedOk !== r.ok) {
+    lastLoggedOk = r.ok;
+    console.info(`[health] 引擎探测结果变化：${r.ok ? '可达' : '不可达'}（reason=${r.reason ?? 'none'} ms=${r.ms}）`);
+  }
 }
 
-void tickProbe();
-setInterval(() => { void tickProbe(); }, PROBE_INTERVAL_MS).unref?.();
+/**
+ * ⚠️ 后台 tick **必须**兜底 catch：`probeEngine` 不抛异常只是实现承诺，不是类型约束
+ * （返回类型 `Promise<{...}>` 不排除 reject）。定时器回调里未捕获的异步抛错会直接要了进程的命
+ * ——Node ≥15 默认 unhandledRejection 致命，实测 node 26 下整个进程 exit 1，
+ * 官网连同保活端点 /api/health 一起挂掉，监控却看不出原因。
+ */
+const tick = (): void => {
+  void tickProbe().catch((e) => console.error('[health] 探针 tick 失败：', e));
+};
+tick();
+setInterval(tick, PROBE_INTERVAL_MS).unref?.();
 
 /** 只暴露 host，绝不带路径/查询串（避免把内部路径或密钥泄给监控页面）。 */
-function engineSnapshot(): { configured: boolean; base: string | null; lastProbe: LastProbe | null } {
+function engineSnapshot(): { configured: boolean; base: string | null; lastProbe: LastProbe } {
   const raw = (process.env.OSRM_API_BASE || '').trim();
   let host: string | null = null;
   try { host = raw ? new URL(raw).host : null; } catch { host = null; }
-  return { configured: Boolean(raw), base: host, lastProbe };
+  return { configured: Boolean(raw), base: host || null, lastProbe };
+}
+
+// 启动即打印一次归一后的实际参数——运维写错 env 时能立刻从日志看出（而不是靠猜频率）
+console.info(`[health] 后台探针间隔 ${PROBE_INTERVAL_MS}ms（deep 预算 ${DEEP_TIMEOUT_MS}ms / 后台预算 ${PROBE_TIMEOUT_MS}ms）；引擎 base = ${engineSnapshot().base ?? '未配置'}`);
+
+type ProbeResult = { ok: boolean; ms: number; reason?: string };
+/** deep 结果 + **结果时刻**（语义：探测拿到结果的时刻，不是请求进来的时刻）。 */
+type DeepProbe = ProbeResult & { at: string };
+
+/**
+ * deep 档单飞合并：同一时刻只允许一个在飞探测，后来的请求 await 同一个 promise。
+ * **不做时间缓存（不设 TTL）**：结算后立刻失效，所以「杀掉依赖后 deep 必须立刻 degraded」不受影响
+ * （时间缓存会返回陈旧状态、把验收做假）。
+ * 起因：`/api/health` 按规格 §4.1 必须保持免鉴权，于是 30 个匿名并发 `?deep=1` 会被 1:1 放大成
+ * 30 次引擎请求 —— 官网成了打自己引擎的放大器。
+ */
+let inFlightDeep: Promise<DeepProbe> | null = null;
+
+function deepProbe(): Promise<DeepProbe> {
+  if (!inFlightDeep) {
+    inFlightDeep = probeEngine(DEEP_TIMEOUT_MS)
+      // at 在 await 之后取：探针真拿到结果的时刻（原先取的是请求时刻，比结果早一整个预算，实测早 3s）
+      .then((r) => ({ ...r, at: new Date().toISOString() }))
+      .finally(() => { inFlightDeep = null; });
+  }
+  return inFlightDeep;
 }
 
 app.get('/api/health', async (req: Request, res: Response) => {
   const snap = engineSnapshot();
-  const now = new Date().toISOString();
+  const now = new Date().toISOString();   // 请求时刻（顶层 time 的语义）
 
   if (req.query.deep === '1') {
-    const r = await probeEngine(DEEP_TIMEOUT_MS);
-    const probe: LastProbe = { ok: r.ok, at: now, ms: r.ms, ...(r.reason ? { reason: r.reason } : {}) };
+    let probe: LastProbe;
+    try {
+      const r = await deepProbe();
+      probe = { ok: r.ok, at: r.at, ms: r.ms, ...(r.reason ? { reason: r.reason } : {}) };
+    } catch (e) {
+      // 与后台 tick 同一类风险：express 4 不接管 async 处理器的 rejection，未捕获即进程级致命
+      console.error('[health] deep 探测失败：', e);
+      probe = { ok: false, at: new Date().toISOString(), ms: 0, reason: 'unreachable' };
+    }
     res.json({
-      status: snap.configured && !r.ok ? 'degraded' : 'ok',
+      status: snap.configured && probe.ok === false ? 'degraded' : 'ok',
       time: now,
       engine: { ...snap, lastProbe: probe },
     });
     return;
   }
 
-  // 轻量档：只读后台探针的缓存结果，绝不在这里实时探测（否则保活请求会被拖死）
-  const degraded = snap.configured && snap.lastProbe !== null && !snap.lastProbe.ok;
+  // 轻量档：只读后台探针的缓存结果，绝不在这里实时探测（否则保活请求会被拖死）。
+  // lastProbe.ok === null 表示首个探针还没回包 → 不判 degraded（status 只有 ok|degraded 两值，
+  // 不能因为「未知」把保活端点打红）；「还没探过」由 lastProbe.ok=null 如实表达，不再谎报 ok。
+  const degraded = snap.configured && snap.lastProbe.ok === false;
   res.json({ status: degraded ? 'degraded' : 'ok', time: now, engine: snap });
 });
 
