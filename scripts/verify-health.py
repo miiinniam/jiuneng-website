@@ -4,33 +4,58 @@
     ENGINE_API_KEY=... python scripts/verify-health.py [site_url]
 
 环境变量：
-    SITE_URL / ENGINE_API_KEY(或 OSRM_ENGINE_KEY，**必填**，拒绝默认值) / HEALTH_PROBE_WAIT（秒，默认 20）
+    SITE_URL / ENGINE_API_KEY(或 OSRM_ENGINE_KEY，**必填**，拒绝默认值)
+    HEALTH_PROBE_WAIT（秒，**显式覆盖**等待预算；不设则按实测探针间隔自动推 ≥ 2×间隔，下限 5s）
+    HEALTH_PROBE_MEASURE_CAP（秒，实测间隔的采样上限，默认 75）
     ENGINE_PY / ENGINE_CWD（覆盖本机引擎运行时路径，默认见下）
 
 覆盖断言：
   ① 轻量档：HTTP 200 + engine.configured=true + engine.base 只有 host（无路径/无密钥）+ lastProbe 字段齐全
      —— 首个探针回包前 ok=null 属正常 pending（规格 §4 允许字段可空）；断言前先等回包，ok 只接受 boolean|null
-  ①B 密钥门禁（**先于任何破坏性操作**）：脚本自带的 KEY 必须真能过上游鉴权，且带密钥走官网出口的测算必须
-     拿到结果 —— 否则就是「健康检查报 ok、客户侧测算全 401」的假绿，必须非 0 退出
-  ② deep=1：引擎在线 → ok=true；且 lastProbe.at >= time（at 是 after-await 的结果时刻，不是请求时刻）
+     同时**先实测被测站点的探针间隔**（采样两次 lastProbe.at 求差，见下）并据此推等待预算
+  ①B 密钥门禁（**先于任何破坏性操作**）：脚本自带的 KEY 必须真能过上游鉴权（只接受非 401 的 2xx/4xx，
+     **HTTP 0（连不上）与 5xx 都算失败**），且带密钥走官网出口的测算必须拿到结果 —— 否则就是
+     「健康检查报 ok、客户侧测算全 401」的假绿，必须非 0 退出
+  ② deep=1：引擎在线 → ok=true；且 lastProbe.at 必须晚于请求时刻（at 是 after-await 的结果时刻）
+  ②B deep **单飞合并**（不是 TTL 缓存）：慢依赖 + 30 个真并发 `?deep=1` → 上游 hits 增量 **==1**、
+     30 个响应的 at 集合大小 **==1**；**紧接着立即单发 → hits 必须再 +1**（证明结算即失效、没有时间缓存）
+  ②C `at` 时序：可控延迟假依赖（800ms）→ `at - time >= 400ms`（把 at 写成请求时刻的实现必须变红）
+  ②D reason 覆盖：黑洞依赖（连上不回）→ `timeout`；`engineBase` 三种写法（根/带尾斜杠/.../api/v1）等价
   ③ 取证：打印本机 18000/18001 现状；**只有**官网 base 直连 18000 时才动 18000
   ④ 真杀「官网 base 指向的那个服务」→ 轻量档 status=degraded + lastProbe.ok=false + reason **必须** == 'unreachable'
      → ?deep=1 同样 degraded 且 reason=='unreachable'；轻量档仍秒回 200（保活不变量）
   ⑤ 重新拉起（只拉原本在跑的那个）→ 回到 status=ok + lastProbe.ok=true，且业务测算再次可用
-  ⑥ 环境变量写错（HEALTH_PROBE_MS=abc）不得退化成忙循环（回归：Number('abc')=NaN / Number('')=0 喂给 setInterval）
-  ⑦ 未配置分支（不设 OSRM_API_BASE）→ reason **必须** == 'not_configured'
+  ⑥ tick 抛错不得带走进程（**在 dist 副本上注入必抛错**，不动仓库源文件）：stderr 失败日志 **≥2 条**且
+     两次出现的间隔 **≥ 0.5×探针间隔**（证明「启动 tick」与「setInterval tick」两条路径都在跑且都被 catch），
+     同时进程存活、`/api/health` 仍 200；deep 的异常分支 ms 必须是**实测耗时**（不是硬编码 0）
+  ⑦ 环境变量边界（每个值都断言，含**上界**）：非有限/≤0 回落默认且 3s ≤1 次；过小夹到下限且 3s 约 3~6 次；
+     >2³¹−1 夹到上限且 3s ≤1 次 —— 三种分支都必须在 stderr 出现
+     `环境变量 <NAME>="<被拒原值>"`；HEALTH_DEEP_TIMEOUT_MS/HEALTH_PROBE_TIMEOUT_MS 写 2³² 时
+     活引擎**不得**被误报 timeout（假告警回归）
+  ⑧ 未配置分支（不设 OSRM_API_BASE）→ reason **必须** == 'not_configured'
 
 安全护栏（别再删）：
   - 只对「本机回环 base + 已知开发端口」做杀进程实验；远端/未知 base 一律只跑只读断言
-  - 杀之前核对进程命令行身份（kill_port 的 expect）；对不上就拒绝杀并记失败
+  - 杀之前核对进程命令行身份（kill_port）：**强标识**（命令行含绝对路径片段 deploy/osrm-engine、
+    ENGINE_CWD 等）直接放行；只有**弱标识**（`server.py` 之类以 cwd 启动时才剩的串）时必须再做
+    **端口自证**（`GET /gateway/health` 回出 `gateway: "jiuneng-osrm-gateway"` 指纹）；两者都不满足 → 拒杀并记失败
+  - 端口**没有监听**时 kill_port 记为失败（不是静默跳过）：否则配置了依赖却没监听会整段跳过降级断言、
+    脚本仍打「全部通过」= 假绿
   - 进杀进程阶段前记下哪些端口原本在跑；正常结束/异常/Ctrl-C 都只恢复原本在跑的那些，绝不留孤儿进程
   - 临时站点与假依赖一律 try/finally 收干净（非 daemon 线程 + shutdown/server_close/join，避免解释器关闭时
     与仍在写 stderr 的线程抢锁 → 断言全过却以 127 退出）
+  - **所有**子进程调用（curl / netstat / powershell）都带 Python 级 timeout：任一挂住 → 脚本永不退出，
+    已经被 ④ 杀掉的依赖就永远等不到 finally/atexit 的恢复
+
+等待预算为什么不能写死：默认配置下（文档配方未设 HEALTH_PROBE_MS）探针间隔是 60s，依赖死后轻量档要
+**约 60s** 才变 degraded；原版写死 20s = **必然假红**。所以先实测间隔（采样 lastProbe.at 两次求差）再推
+`budget = max(2 × interval, 5.0)`；`HEALTH_PROBE_WAIT` 保留为显式覆盖。
 
 本机 python urllib 走 127.0.0.1 会被环境拦截，统一 subprocess 调 curl（沿用 scripts/probe-quote-api.py 风格）。
 **退出码即结论**：0 = 全部通过，非 0 = 有失败项。
 """
 import atexit
+import datetime
 import http.server
 import json
 import os
@@ -39,6 +64,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -54,24 +80,40 @@ if not KEY:
 
 ENGINE_PORT = 18000                                  # 原始引擎（AIOSRM++ run_server.py）
 GATEWAY_PORT = 18001                                 # 官网专用网关（deploy/osrm-engine/server.py，内嵌引擎 app）
+# 等待预算：**不写死**。默认为 None → 由实测探针间隔推出（max(2×间隔, 5s)，见 measure_wait_budget）。
+# HEALTH_PROBE_WAIT 仍可显式覆盖（原版写死 20s，在默认 60s 间隔的站点上必然假红）。
+WAIT_BUDGET_OVERRIDE: float | None = None
 try:
-    WAIT_BUDGET_S = max(int(os.environ.get("HEALTH_PROBE_WAIT") or "20"), 0)
+    _raw_wait = os.environ.get("HEALTH_PROBE_WAIT")
+    if _raw_wait not in (None, ""):
+        WAIT_BUDGET_OVERRIDE = max(float(_raw_wait), 0.0)
 except ValueError:
-    WAIT_BUDGET_S = 20
+    WAIT_BUDGET_OVERRIDE = 20.0
+WAIT_BUDGET_S: float = WAIT_BUDGET_OVERRIDE if WAIT_BUDGET_OVERRIDE is not None else 20.0   # 实测前的保守兜底
+MEASURED_INTERVAL_S: float | None = None
 PY = os.environ.get("ENGINE_PY", "D:/01_业务/立三方/AIOSRM++/.venv-build/Scripts/python.exe")
 ENGINE_CWD = os.environ.get("ENGINE_CWD", "D:/01_业务/立三方/AIOSRM++/backend")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GATEWAY_CWD = os.path.join(ROOT, "deploy", "osrm-engine")
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
-# 杀进程白名单：端口 → 命令行里**必须**出现的子串（杀前核对身份，防止像原版那样把无关进程杀掉：
-# 审查实测把 kill_port 原样抄到 scratch，对另一个 `python -m http.server 18014` 跑，真被杀了）。
-# 注：本机网关以 `python server.py`（cwd=deploy/osrm-engine）启动，命令行里**不含** "osrm-engine"
-#     （cwd 不在 CommandLine 里），所以这里只能钉 "server.py"。
+# 杀进程白名单：端口 → 命令行里**必须**出现的**弱**子串（以 cwd 方式启动时命令行只剩这些）。
+# 原版只钉弱串就直接杀，实测会把无关进程（如 `python -m http.server 18014`）杀掉；现在弱串还要过「端口自证」，见 identity_check。
 EXPECT_CMDLINE = {
     ENGINE_PORT: ("run_server.py",),
     GATEWAY_PORT: ("server.py",),
 }
+# 强标识：命令行里出现**绝对路径片段**（脚本自己的 start_port 就是这么起的）→ 无需自证
+CMD_STRONG = {
+    ENGINE_PORT: tuple(dict.fromkeys([os.path.join(ENGINE_CWD, "run_server.py"),
+                                      ENGINE_CWD.replace("\\", "/"), ENGINE_CWD])),
+    GATEWAY_PORT: tuple(dict.fromkeys([os.path.join(GATEWAY_CWD, "server.py"),
+                                       GATEWAY_CWD, GATEWAY_CWD.replace("\\", "/"),
+                                       "deploy/osrm-engine", "deploy\\osrm-engine"])),
+}
 NODE_EXE = shutil.which("node")
+# 临时站点 stderr 落盘目录（断言 warn 文本用；脚本退出时整棵删掉）
+SCRATCH_DIR = tempfile.mkdtemp(prefix="verify-health-")
+atexit.register(lambda: shutil.rmtree(SCRATCH_DIR, ignore_errors=True))
 
 # 业务断言用的最小合法请求（与 scripts/probe-quote-api.py 同一条线路）
 QUOTE_BODY = {
@@ -89,22 +131,42 @@ fails: list[str] = []
 
 
 # ── HTTP（统一走 curl：本机 urllib 直连 127.0.0.1 会被环境拦截）──────────
-def curl(url, timeout=20, want_code=False):
-    """curl -s → (http_code, body_text)。返回码 0 表示连不上。"""
-    p = subprocess.run(["curl", "-s", "-m", str(timeout), url, "-w", "\n%{http_code}"],
-                       capture_output=True)
-    out = p.stdout.decode("utf-8", "replace")
+def run_cmd(args, timeout, input=None, label=None, quiet=False):
+    """**带 Python 级 timeout** 的 subprocess.run。
+
+    原版所有调用都没有 timeout：curl / netstat / powershell 任一挂住 → 脚本永不退出 →
+    已经被 ④ 杀掉的依赖永远等不到 finally/atexit 的恢复。超时即记失败（quiet 用于纯信息性探测）。
+    """
+    try:
+        return subprocess.run(args, capture_output=True, timeout=timeout, input=input)
+    except subprocess.TimeoutExpired:
+        if not quiet:
+            fails.append(f"{label or args[0]} 超时（>{timeout}s）—— 已记失败，避免脚本挂死")
+        return None
+
+
+def _split_code(out):
     body, _, code = out.rpartition("\n")
     try:
         code_i = int(code.strip() or 0)
     except ValueError:
         code_i = 0
-    return (code_i, body.strip()) if want_code else body.strip()
+    return code_i, body.strip()
 
 
-def curl_json(url, timeout=20):
+def curl(url, timeout=20, want_code=False, quiet=False):
+    """curl -s → (http_code, body_text)。返回码 0 表示连不上（**也是超时/失败的取值**）。"""
+    p = run_cmd(["curl", "-s", "-m", str(timeout), url, "-w", "\n%{http_code}"],
+                timeout=timeout + 10, label=f"curl {url}", quiet=quiet)
+    if p is None:
+        return (0, "") if want_code else ""
+    code_i, body = _split_code(p.stdout.decode("utf-8", "replace"))
+    return (code_i, body) if want_code else body
+
+
+def curl_json(url, timeout=20, quiet=False):
     """→ (http_code, obj|None, raw_text)"""
-    code, body = curl(url, timeout, want_code=True)
+    code, body = curl(url, timeout, want_code=True, quiet=quiet)
     try:
         return code, json.loads(body), body
     except Exception:
@@ -117,19 +179,18 @@ def curl_post(url, payload, key=None, timeout=60):
     if key:
         args += ["-H", f"X-API-Key: {key}"]
     args += ["--data-binary", "@-", "-w", "\n%{http_code}"]
-    p = subprocess.run(args, input=json.dumps(payload).encode(), capture_output=True)
-    out = p.stdout.decode("utf-8", "replace")
-    body, _, code = out.rpartition("\n")
-    try:
-        code_i = int(code.strip() or 0)
-    except ValueError:
-        code_i = 0
-    return code_i, body.strip()
+    p = run_cmd(args, timeout=timeout + 10, input=json.dumps(payload).encode(), label=f"curl POST {url}")
+    if p is None:
+        return 0, ""
+    return _split_code(p.stdout.decode("utf-8", "replace"))
 
 
 # ── 进程/端口 ──────────────────────────────────────────────────────────
 def pid_on(port):
-    out = subprocess.run(["netstat", "-ano"], capture_output=True).stdout.decode("utf-8", "replace")
+    p = run_cmd(["netstat", "-ano"], 30, label="netstat -ano")
+    if p is None:
+        return None
+    out = p.stdout.decode("utf-8", "replace")
     for line in out.splitlines():
         if f":{port} " in line and "LISTENING" in line:
             return line.split()[-1]
@@ -138,10 +199,12 @@ def pid_on(port):
 
 def proc_info(pid):
     """→ (Name, CommandLine)。进程已退出则返回 ("", "")。"""
-    p = subprocess.run(["powershell", "-NoProfile", "-Command",
-                        f"Get-CimInstance Win32_Process -Filter 'ProcessId={pid}' | "
-                        f"Select-Object Name,CommandLine | ConvertTo-Json -Compress"],
-                       capture_output=True)
+    p = run_cmd(["powershell", "-NoProfile", "-Command",
+                 f"Get-CimInstance Win32_Process -Filter 'ProcessId={pid}' | "
+                 f"Select-Object Name,CommandLine | ConvertTo-Json -Compress"],
+                20, label=f"powershell Get-CimInstance ProcessId={pid}")
+    if p is None:
+        return "", ""
     txt = p.stdout.decode("utf-8", "replace").strip()
     try:
         obj = json.loads(txt) if txt else {}
@@ -152,25 +215,64 @@ def proc_info(pid):
     return str(obj.get("Name") or ""), str(obj.get("CommandLine") or "")
 
 
-def kill_port(port, expect):
+def port_self_identity(port):
+    """**端口自证**：该端口上的服务自己回出本项目特有的指纹，才算身份对得上。
+
+    为什么需要这一层：网关以 `python server.py`（cwd=deploy/osrm-engine）启动时，Windows 的
+    CommandLine **不含** cwd，命令行里只剩 `server.py` 这个弱串 —— 弱串不足以区分
+    `python -m http.server 18001` 之类的无关进程（审查实验室实测把无关进程杀掉过）。
+    现在弱串必须再过自证：网关的 `GET /gateway/health`（KEY_FREE，无需密钥）回
+    `{"status":"ok","gateway":"jiuneng-osrm-gateway"}`。
+    """
+    if port == GATEWAY_PORT:
+        code, body, _ = curl_json(f"http://127.0.0.1:{port}/gateway/health", 6, quiet=True)
+        return code == 200 and isinstance(body, dict) and body.get("gateway") == "jiuneng-osrm-gateway"
+    if port == ENGINE_PORT:
+        code, body, _ = curl_json(f"http://127.0.0.1:{port}/health", 6, quiet=True)
+        return code == 200 and isinstance(body, dict) and body.get("status") == "ok"
+    return False
+
+
+def identity_check(port, name, cmd):
+    """→ (ok, 说明)。强标识（绝对路径片段）直接放行；弱标识必须过端口自证；都不满足 → 拒杀。"""
+    strong = [s for s in CMD_STRONG.get(port, ()) if s and s in cmd]
+    if strong:
+        return True, f"命令行含绝对路径片段 {strong[0]!r}"
+    weak = [s for s in EXPECT_CMDLINE.get(port, ()) if s and s in cmd]
+    if not weak:
+        return False, (f"命令行既没有绝对路径片段 {CMD_STRONG.get(port)!r} 也没有弱标识 "
+                       f"{EXPECT_CMDLINE.get(port)!r}")
+    if port_self_identity(port):
+        return True, f"命令行只有弱标识 {weak[0]!r}（cwd 启动），但端口自证通过（本项目服务指纹匹配）"
+    return False, f"命令行只有弱标识 {weak!r} 且端口自证失败（不是本项目服务）"
+
+
+def kill_port(port, expect=None):
     """Windows：taskkill 会静默失败，用 Stop-Process 并核对端口已释放。
 
-    ⚠️ 杀之前**必须核对进程身份**（expect = 命令行里必须出现的子串）：原版没有这一步，实测会把
-    无关进程（如 `python -m http.server 18014`）一起杀掉。对不上就拒绝杀并记失败。
+    ⚠️ 两条纪律（都来自实测事故）：
+    1. 杀之前**必须核对身份**（identity_check）：弱标识不够，还要过端口自证；
+    2. 端口**没有监听**要**记失败**，不能静默 return —— 否则「configured=true 却没监听」会让 ④/⑤ 整段
+       跳过，而脚本照样打「全部通过」（假绿）。
     """
     pid = pid_on(port)
     if not pid:
-        print(f"   （端口 {port} 上没有监听进程，没有可杀的）")
+        fails.append(f"{port} 端口没有监听进程：依赖没在跑 → 无法验证降级/恢复（configured=true 却是这个"
+                     f"状态本身就是缺陷，不是「没什么可做的」）")
+        print(f"   ✗ {port} 没有监听进程：记失败（不许静默跳过 ④/⑤）")
         return None
     name, cmd = proc_info(pid)
-    missing = [s for s in expect if s not in cmd]
-    if missing or not name.lower().startswith("python"):
-        fails.append(f"拒绝杀 {port} 端口 PID {pid}：进程身份对不上"
-                     f"（Name={name!r} 缺 {missing} CommandLine={cmd[:200]!r}）")
-        print(f"   ✗ 拒绝杀 PID {pid}：身份对不上（Name={name!r}，命令行缺 {missing}）")
+    ok, why = identity_check(port, name, cmd)
+    if not ok or not name.lower().startswith("python"):
+        fails.append(f"拒绝杀 {port} 端口 PID {pid}：进程身份对不上（Name={name!r} {why}；"
+                     f"CommandLine={cmd[:200]!r}）")
+        print(f"   ✗ 拒绝杀 PID {pid}：身份对不上（Name={name!r}；{why}）")
         return None
-    subprocess.run(["powershell", "-NoProfile", "-Command", f"Stop-Process -Id {pid} -Force"],
-                   capture_output=True)
+    print(f"   （身份核对通过：{why}）")
+    p = run_cmd(["powershell", "-NoProfile", "-Command", f"Stop-Process -Id {pid} -Force"],
+                20, label=f"Stop-Process {pid}")
+    if p is None:
+        return None
     for _ in range(10):
         if pid_on(port) is None:
             break
@@ -274,6 +376,73 @@ def probe_reason(entry):
     return lp.get("reason")
 
 
+def probe_at(entry):
+    lp = (entry or {}).get("engine", {}).get("lastProbe") or {}
+    return lp.get("at")
+
+
+def probe_ms(entry):
+    lp = (entry or {}).get("engine", {}).get("lastProbe") or {}
+    return lp.get("ms")
+
+
+def parse_iso(s):
+    """ISO 时间串 → datetime（'Z' 结尾）。解析不了返回 None。"""
+    try:
+        return datetime.datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def measure_wait_budget():
+    """**实测被测站点的探针间隔**，据此推等待预算 —— 绝不写死。
+
+    默认配置（文档配方未设 HEALTH_PROBE_MS）下间隔是 60s：依赖死后轻量档要**约 60s** 才变 degraded，
+    原版写死 20s 在标准配置上**必然假红**。做法：采样两次 `lastProbe.at` 求差（必要时先等一次变化）。
+    `HEALTH_PROBE_WAIT` 是显式覆盖，设了就完全按它来（并打印说明）。
+    """
+    global WAIT_BUDGET_S, MEASURED_INTERVAL_S
+    url = f"{SITE}/api/health"
+    if WAIT_BUDGET_OVERRIDE is not None:
+        WAIT_BUDGET_S = WAIT_BUDGET_OVERRIDE
+        print(f"   （等待预算 {WAIT_BUDGET_S}s 来自显式覆盖 HEALTH_PROBE_WAIT，不做间隔实测）")
+        return
+    try:
+        cap = float(os.environ.get("HEALTH_PROBE_MEASURE_CAP") or 75)
+    except ValueError:
+        cap = 75.0
+    _code, body, _raw = curl_json(url, 15)
+    at1 = probe_at(body)
+    if at1 is None:
+        # 站点刚起：首个探针可能还没回包 —— 先等 at 变成非空（这一段等价于 §① 的 pending 等待）
+        pend_deadline = time.time() + max(cap, 30.0)
+        while time.time() < pend_deadline and at1 is None:
+            time.sleep(0.5)
+            _code, body, _raw = curl_json(url, 15)
+            at1 = probe_at(body)
+    if at1 is None:
+        fails.append(f"无法实测探针间隔：{url} 的 lastProbe.at 始终为空（首个探针没回包 / 后台探针没在跑）")
+        print(f"   ✗ 无法实测探针间隔（lastProbe.at 为空）→ 退回默认预算 {WAIT_BUDGET_S}s")
+        return
+    deadline = time.time() + cap
+    while time.time() < deadline:
+        time.sleep(0.5)
+        _code, body, _raw = curl_json(url, 15)
+        at2 = probe_at(body)
+        if at2 and at2 != at1:
+            d1, d2 = parse_iso(at1), parse_iso(at2)
+            if d1 and d2:
+                MEASURED_INTERVAL_S = (d2 - d1).total_seconds()
+                break
+    if MEASURED_INTERVAL_S is None or MEASURED_INTERVAL_S <= 0:
+        fails.append(f"无法实测探针间隔：{cap}s 内 lastProbe.at 始终没变化（后台探针没在跑？）")
+        print(f"   ✗ {cap}s 内 lastProbe.at 未变化 → 退回默认预算 {WAIT_BUDGET_S}s（并记失败）")
+        return
+    WAIT_BUDGET_S = max(2 * MEASURED_INTERVAL_S, 5.0)
+    print(f"   实测探针间隔 = {MEASURED_INTERVAL_S:.1f}s（采样 lastProbe.at 两次求差）"
+          f" → 等待预算 = max(2×间隔, 5s) = {WAIT_BUDGET_S:.1f}s")
+
+
 def parse_host_port(base):
     """engine.base 只含 host（可能带端口）→ (host, port|None)。解析不出端口就返回 None，**不回落默认值**。"""
     b = str(base or "").strip()
@@ -308,7 +477,7 @@ def business_quote(label):
     return False
 
 
-# ── 临时站点 / 假依赖（§⑥§⑦ 用；一律 try/finally 收干净）──────────────
+# ── 临时站点 / 假依赖（②B②C②D⑥⑦⑧ 用；一律 try/finally 收干净）──────────
 def free_port():
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
@@ -317,8 +486,16 @@ def free_port():
     return p
 
 
-def start_temp_site(overrides):
-    """起一个临时官网（dist/server.cjs），返回 (proc, port)。调用方必须 try/finally 收掉。"""
+_STDERR_SEQ = {"n": 0}
+
+
+def start_temp_site(overrides, cwd=None, entry="dist/server.cjs"):
+    """起一个临时官网（默认 dist/server.cjs），返回 (proc, port, stderr_path)。
+
+    stderr **不再丢 DEVNULL**：① 断言 warn 文本（`环境变量 <NAME>="<被拒原值>"`）必须有落点；
+    ② ⑥ 的 tick 失败日志要在文件里数条数与时间间隔。
+    调用方必须 try/finally 收掉。
+    """
     port = free_port()
     env = {**os.environ, "NODE_ENV": "production", "PORT": str(port)}
     for k, v in overrides.items():
@@ -326,9 +503,49 @@ def start_temp_site(overrides):
             env.pop(k, None)
         else:
             env[k] = v
-    proc = subprocess.Popen([NODE_EXE, "dist/server.cjs"], cwd=ROOT, env=env,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return proc, port
+    _STDERR_SEQ["n"] += 1
+    err_path = os.path.join(SCRATCH_DIR, f"site-{_STDERR_SEQ['n']}-{port}.stderr.log")
+    errf = open(err_path, "wb")
+    proc = subprocess.Popen([NODE_EXE, entry], cwd=cwd or ROOT, env=env,
+                            stdout=subprocess.DEVNULL, stderr=errf)
+    errf.close()                                     # 子进程已继承句柄，父进程这侧关掉
+    return proc, port, err_path
+
+
+def start_temp_site_ready(overrides, cwd=None, entry="dist/server.cjs", attempts=3, ready_timeout=25):
+    """起临时站点并确认 `GET /api/health` 200。
+
+    **为什么要有重试**：`free_port()` 是「bind(0) → close → 再 bind」的经典竞态 —— 中间被别的进程
+    抢走端口，站点就起不来（复核实验室实测撞车）。起不来就换端口重试（≥2 次），不要靠运气。
+    → (proc, port, err_path) 或 (None, None, None)（已记失败）
+    """
+    last_err = ""
+    for i in range(max(attempts, 2)):
+        proc, port, err_path = start_temp_site(overrides, cwd=cwd, entry=entry)
+        deadline = time.time() + ready_timeout
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                last_err = f"进程已退出（exit {proc.returncode}），多半是端口 {port} 被抢"
+                break
+            code = curl(f"http://127.0.0.1:{port}/api/health", 3, want_code=True, quiet=True)[0]
+            if code == 200:
+                if i:
+                    print(f"   （临时站点第 {i + 1} 次尝试起在 PORT={port} 成功）")
+                return proc, port, err_path
+            time.sleep(0.5)
+        last_err = last_err or f"PORT={port} 在 {ready_timeout}s 内没回 200"
+        stop_temp_site(proc)
+        print(f"   （临时站点第 {i + 1} 次没起来：{last_err} → 换端口重试）")
+    fails.append(f"临时站点起不来（已重试 {attempts} 次）：{last_err}")
+    return None, None, None
+
+
+def read_err(err_path):
+    try:
+        with open(err_path, "rb") as f:
+            return f.read().decode("utf-8", "replace")
+    except Exception:
+        return ""
 
 
 def stop_temp_site(proc):
@@ -344,15 +561,24 @@ def stop_temp_site(proc):
         pass
 
 
-def start_fake_dep():
-    """计数用的假依赖。**非 daemon 线程**：daemon 线程在解释器关闭时与仍在写 stderr 的线程抢锁，
-    会让进程以 127 退出（Fatal Python error: _enter_buffered_busy）——那样「退出码即结论」就废了。"""
+def start_fake_dep(delay_s=0.0, body=b'{"status":"ok"}'):
+    """计数用的假依赖（可加**可控延迟**：并发断言必须让请求真的重叠，at 时序断言需要确定的耗时差）。
+
+    **非 daemon 线程**：daemon 线程在解释器关闭时与仍在写 stderr 的线程抢锁，
+    会让进程以 127 退出（Fatal Python error: _enter_buffered_busy）——那样「退出码即结论」就废了。
+    """
     state = {"hits": 0}
 
     class _Handler(http.server.BaseHTTPRequestHandler):
+        # HTTP/1.1 + 显式 Content-Length：与 Node fetch(undici) 的 keep-alive 语义一致。
+        # 用默认的 HTTP/1.0 时不发 Connection: close，客户端可能把连接当 keep-alive 复用、
+        # 而服务端已关闭 → 复用时偶发 ECONNRESET，表现为「探针偶发 ok=false」的**假红**。
+        protocol_version = "HTTP/1.1"
+
         def do_GET(self):                                      # noqa: N802
             state["hits"] += 1
-            body = b'{"status":"ok"}'
+            if delay_s:
+                time.sleep(delay_s)
             try:                                               # 站点被 terminate 时连接被掐断，别让异常冒到 stderr
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -394,8 +620,77 @@ def stop_fake_dep(srv, thread):
             pass
 
 
+def start_blackhole_dep():
+    """黑洞依赖：**能连上但永不回包** → 探针必须在预算内 abort，reason == 'timeout'。
+
+    （`unreachable` 用「连不上」造；`timeout` 必须用这种「连接建立后假死」的形态造，
+    规格 §4.1 的封闭枚举要求这一支也被覆盖。）
+    """
+    lsock = socket.socket()
+    lsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    lsock.bind(("127.0.0.1", 0))
+    lsock.listen(64)
+    port = lsock.getsockname()[1]
+    state = {"accepted": 0, "stop": False}
+
+    def _loop():
+        while not state["stop"]:
+            try:
+                conn, _addr = lsock.accept()
+            except OSError:
+                return
+            state["accepted"] += 1
+            # 故意什么都不回：连接保持打开，客户端只能等到自己的超时
+
+    thread = threading.Thread(target=_loop, name="blackhole-dep", daemon=False)
+    thread.start()
+    return lsock, thread, state, port
+
+
+def stop_blackhole_dep(lsock, thread):
+    try:
+        if lsock:
+            lsock.close()
+    except Exception:
+        pass
+    if thread:
+        try:
+            thread.join(timeout=5)
+        except Exception:
+            pass
+
+
+def make_mutant_site_bundle():
+    """把 `dist/` 复制到临时目录并**在副本里**注入必抛错（**绝不动仓库源文件/dist**）。
+
+    注入点：`probeEngine` 一开头 `await 300ms` 后必抛 —— 这样「启动 tick」与「setInterval tick」
+    两条路径都会 reject，deep 的异常分支耗时也不是 0（用来断言 ms 是实测耗时而不是硬编码 0）。
+    → (cwd, entry) 或 None（记失败）
+    """
+    src = os.path.join(ROOT, "dist")
+    if not os.path.isdir(src):
+        fails.append(f"找不到 {src}（先 npm run build），无法做 tick 兜底回归")
+        return None
+    dst = os.path.join(SCRATCH_DIR, "mutant")
+    shutil.rmtree(dst, ignore_errors=True)
+    shutil.copytree(src, os.path.join(dst, "dist"))
+    entry_path = os.path.join(dst, "dist", "server.cjs")
+    with open(entry_path, "r", encoding="utf-8") as f:
+        code = f.read()
+    anchor = "async function probeEngine(timeoutMs = 3e3) {"
+    if anchor not in code:
+        fails.append(f"dist 副本里找不到注入锚点 {anchor!r}（bundle 结构变了，需同步本脚本）")
+        return None
+    injected = (anchor + "\n  await new Promise((r) => setTimeout(r, 300));\n"
+                "  throw new Error(\"MUTATION: injected probeEngine failure (tick catch regression)\");")
+    code = code.replace(anchor, injected, 1)
+    with open(entry_path, "w", encoding="utf-8") as f:
+        f.write(code)
+    return dst, os.path.join("dist", "server.cjs")
+
+
 print(f"官网 = {SITE}\n引擎(原始) = 127.0.0.1:{ENGINE_PORT}\n网关 = 127.0.0.1:{GATEWAY_PORT}\n"
-      f"等待预算 = {WAIT_BUDGET_S}s\n密钥 = 已提供（长度 {len(KEY)}，不在输出里回显）\n")
+      f"密钥 = 已提供（长度 {len(KEY)}，不在输出里回显）\n")
 
 # ── ① 轻量档 ───────────────────────────────────────────────────────────
 t0 = time.time()
@@ -422,6 +717,9 @@ else:
     else:
         if "/" in base or "?" in base or "key" in base.lower() or "token" in base.lower():
             fails.append(f"engine.base 泄露了路径/查询串/密钥，实际 {base!r}（只应给 host）")
+    # **先实测探针间隔**再推等待预算：④⑤ 的等待全靠它 —— 写死 20s 在默认 60s 间隔的站点上必然假红
+    print("   → 实测探针间隔（决定 ④⑤ 的等待预算）…")
+    measure_wait_budget()
     lp = eng.get("lastProbe")
     if not isinstance(lp, dict):
         fails.append(f"engine.lastProbe 必须是对象且字段齐全（ok/at/ms，可为 null），实际 {lp!r}")
@@ -431,7 +729,7 @@ else:
                 fails.append(f"lastProbe 缺字段 {field}，实际 {lp}")
         if probe_ok(light) is None:
             # 首个探针还没回包 → pending（规格允许字段为 null）。断言前先给它时间，避免刚重启就假失败。
-            print(f"   （pending：lastProbe.ok=null，首个探针尚未回包）最多等 {WAIT_BUDGET_S}s …")
+            print(f"   （pending：lastProbe.ok=null，首个探针尚未回包）最多等 {WAIT_BUDGET_S:.1f}s …")
             _ok_first, last_first = poll_light(lambda b: probe_ok(b) is not None)
             code, light, raw = last_first
             print(f"   等待后：HTTP {code} {raw[:220]}")
@@ -474,15 +772,29 @@ else:
 # ── ①B 密钥门禁（必须先于任何破坏性操作：密钥不一致时健康检查假绿）──────
 print("\n①B 密钥一致性门禁")
 if LOCAL_UPSTREAM:
-    code_key, _raw_key = curl_post(f"http://{UP_HOST}:{UPSTREAM_PORT}/api/v1/route/cost", QUOTE_BODY, key=KEY)
-    print(f"   直连上游 {UP_HOST}:{UPSTREAM_PORT} 带 X-API-Key 的测算 → HTTP {code_key}")
+    code_key, raw_key = curl_post(f"http://{UP_HOST}:{UPSTREAM_PORT}/api/v1/route/cost", QUOTE_BODY, key=KEY)
+    print(f"   直连上游 {UP_HOST}:{UPSTREAM_PORT} 带 X-API-Key 的测算 → HTTP {code_key} {raw_key[:160]}")
+    # ⚠️「连不上（HTTP 0）」**不能算通过**：原版只判 ==401，于是上游根本没在监听时这一关照样过，
+    #    后面全靠官网业务断言兜底 —— 而上游死了本来正是最该立刻停下的时候。只接受非 401 的 2xx/4xx。
+    if code_key == 0:
+        fails.append(f"直连上游 {UP_HOST}:{UPSTREAM_PORT} 连不上（HTTP 0）：上游没在监听/链路断了。"
+                     f"这不是「通过」，也不是密钥问题 —— 拒绝继续做破坏性实验")
+        print("   ✗ HTTP 0（连不上）：不能当通过。")
+        print("\n存在问题：\n  - " + "\n  - ".join(fails))
+        sys.exit(1)
     if code_key == 401:
         fails.append("脚本自带的 KEY 过不了上游鉴权（HTTP 401）：密钥不一致 —— "
                      "健康检查会照常报 ok，而客户侧测算会全 401（假绿）")
         print("   ✗ 401：KEY 与上游不一致。健康检查的 ok 是假绿，拒绝继续做破坏性实验。")
         print("\n存在问题：\n  - " + "\n  - ".join(fails))
         sys.exit(1)
-    print(f"   ✓ 直连上游未被 401 拒绝（HTTP {code_key}）")
+    if not (200 <= code_key < 500):
+        fails.append(f"直连上游带密钥测算返回 HTTP {code_key}（只接受非 401 的 2xx/4xx）："
+                     f"上游行为异常，不能当通过")
+        print(f"   ✗ HTTP {code_key} 不在可接受范围内。")
+        print("\n存在问题：\n  - " + "\n  - ".join(fails))
+        sys.exit(1)
+    print(f"   ✓ 直连上游可达且未被 401 拒绝（HTTP {code_key}）")
 else:
     print("   （非本机回环 base：跳过直连鉴权门禁，由下面的官网业务断言兜底）")
 if not business_quote("①B "):
@@ -505,6 +817,190 @@ else:
         fails.append(f"deep 的 lastProbe.at（{at_up}）早于请求时刻 time（{time_up}）—— at 必须是 await 之后的结果时刻")
     elif at_up:
         print(f"   ✓ lastProbe.at={at_up} ≥ time={time_up}（at 取的是结果时刻）")
+
+# ── ②B deep 单飞合并 vs TTL 缓存（匿名并发不得 1:1 放大成对引擎的外打）────
+print("\n②B deep 单飞合并：30 个真并发必须合并成 1 次上游请求，且**不许有 TTL 缓存**")
+if not NODE_EXE:
+    fails.append("找不到 node 可执行文件，无法做单飞/TTL 缓存回归")
+else:
+    srv = thread = None
+    proc = None
+    try:
+        # 慢依赖（1.5s）：保证 30 个并发请求真的重叠 —— 否则「单飞合并」与「各自探测」无法区分
+        srv, thread, dep_state, dep_port = start_fake_dep(delay_s=1.5)
+        proc, site_port, err_path = start_temp_site_ready({
+            "OSRM_API_BASE": f"http://127.0.0.1:{dep_port}",
+            "HEALTH_PROBE_MS": "60000",          # 背景探针不掺进计数（启动那一次已单独排掉）
+            "HEALTH_DEEP_TIMEOUT_MS": "10000",
+        })
+        if proc:
+            base_url = f"http://127.0.0.1:{site_port}"
+            ready, last_rdy = poll_light(lambda b: probe_ok(b) is True,
+                                        budget=40, interval=0.5, url=f"{base_url}/api/health")
+            if not ready:
+                fails.append(f"②B 临时站点 {site_port} 的启动探针没在 40s 内回 ok=true："
+                             f"{str(last_rdy[2])[:160]}")
+            else:
+                dep_state["hits"] = 0            # 排掉启动探测那一次
+                n = 30
+                results: list = [None] * n
+                starts: list = [0.0] * n
+                barrier = threading.Barrier(n)
+
+                def one_deep(i):
+                    barrier.wait()               # 同一刻发出，才是真并发
+                    starts[i] = time.time()
+                    results[i] = curl_json(f"{base_url}/api/health?deep=1", 40)[1]
+
+                workers = [threading.Thread(target=one_deep, args=(i,), name=f"deep-{i}") for i in range(n)]
+                for w in workers:
+                    w.start()
+                for w in workers:
+                    w.join(timeout=60)
+                hits_burst = dep_state["hits"]
+                spread_ms = round((max(starts) - min(starts)) * 1000) if max(starts) else 0
+                ats = {str(probe_at(r)) for r in results}
+                oks = [probe_ok(r) for r in results]
+                print(f"   30 个并发 ?deep=1（假依赖延迟 1.5s，发起时刻跨度 {spread_ms}ms）")
+                print(f"   上游 hits 增量 = {hits_burst}（应 == 1）；响应 at 集合 = {ats}（应只有 1 个元素）")
+                if hits_burst != 1:
+                    fails.append(f"deep 单飞失败：30 个匿名并发被放大成 {hits_burst} 次上游请求（应 == 1）"
+                                 f" —— 官网成了打自己引擎的放大器，会把引擎 IP 限流额度吃光")
+                if len(ats) != 1:
+                    fails.append(f"deep 单飞失败：30 个并发响应的 lastProbe.at 有 {len(ats)} 个不同取值"
+                                 f"（应 == 1，都是同一次探测的结果）")
+                if any(o is not True for o in oks):
+                    fails.append(f"②B 并发 deep 里出现非 ok=true 的响应：{oks[:20]}")
+                # 紧接着**立即**单发一次：hits 必须再 +1 —— 「不许做时间缓存」的正面证据
+                t0 = time.time()
+                _c2, _b2, raw_after = curl_json(f"{base_url}/api/health?deep=1", 40)
+                hits_second = dep_state["hits"]
+                delta2 = hits_second - hits_burst
+                print(f"   紧接着立即单发（{round((time.time() - t0) * 1000)}ms）→ hits 增量 = {delta2}"
+                      f"（应 == 1，证明结算即失效、没有 TTL）")
+                if delta2 != 1:
+                    fails.append(f"deep 做了时间缓存（TTL）：紧接着的单发没有再次探测上游"
+                                 f"（hits {hits_burst} → {hits_second}）。TTL 会把「依赖被杀 → 立刻 degraded」"
+                                 f"变成假绿。原始响应 {raw_after[:160]}")
+                else:
+                    print("   ✓ 单飞合并 + 无 TTL：并发合并成 1 次上游请求，结算后立刻失效")
+    finally:
+        stop_temp_site(proc)
+        stop_fake_dep(srv, thread)
+
+# ── ②C deep 的 at 必须是「拿到结果」的时刻（可控延迟 800ms 假依赖）────────
+print("\n②C deep 的 lastProbe.at 必须晚于请求时刻（延迟 800ms 的假依赖 → at-time ≥ 400ms）")
+if not NODE_EXE:
+    fails.append("找不到 node 可执行文件，无法做 at 时序回归")
+else:
+    srv = thread = None
+    proc = None
+    try:
+        srv, thread, dep_state, dep_port = start_fake_dep(delay_s=0.8)
+        proc, site_port, err_path = start_temp_site_ready({
+            "OSRM_API_BASE": f"http://127.0.0.1:{dep_port}",
+            "HEALTH_PROBE_MS": "60000",
+            "HEALTH_DEEP_TIMEOUT_MS": "8000",
+        })
+        if proc:
+            base_url = f"http://127.0.0.1:{site_port}"
+            code, deep_d, raw_d = curl_json(f"{base_url}/api/health?deep=1", 30)
+            print(f"   延迟 800ms 的依赖 → HTTP {code} {raw_d[:240]}")
+            at_d, time_d = parse_iso(probe_at(deep_d)), parse_iso((deep_d or {}).get("time"))
+            if not at_d or not time_d:
+                fails.append(f"②C 无法解析 at/time（at={probe_at(deep_d)!r} time={(deep_d or {}).get('time')!r}）")
+            else:
+                gap_ms = round((at_d - time_d).total_seconds() * 1000)
+                print(f"   at - time = {gap_ms}ms（阈值 ≥ 400ms = 延迟 ×0.5）")
+                if gap_ms < 400:
+                    fails.append(f"deep 的 at 取值不对：at - time = {gap_ms}ms，小于延迟的 50%（400ms）"
+                                 f" —— at 必须取 await 之后的**结果**时刻，不是请求时刻")
+                else:
+                    print("   ✓ at 是结果时刻（把 at 写成请求时刻的实现会在这里变红）")
+    finally:
+        stop_temp_site(proc)
+        stop_fake_dep(srv, thread)
+
+# ── ②D reason 覆盖：黑洞依赖 → timeout；并且三种 engineBase 写法等价 ──────
+print("\n②D reason 覆盖（黑洞依赖 → timeout）与 engineBase 三种写法等价性")
+if not NODE_EXE:
+    fails.append("找不到 node 可执行文件，无法做 reason/base 覆盖")
+else:
+    # (a) 黑洞：连上但永不回包 → timeout（unreachable 由 ④ 的杀进程覆盖；not_configured 由 ⑧ 覆盖）
+    lsock = bthread = None
+    proc = None
+    try:
+        lsock, bthread, bstate, bh_port = start_blackhole_dep()
+        proc, site_port, err_path = start_temp_site_ready({
+            "OSRM_API_BASE": f"http://127.0.0.1:{bh_port}",
+            "HEALTH_PROBE_MS": "1500",
+            "HEALTH_PROBE_TIMEOUT_MS": "800",
+            "HEALTH_DEEP_TIMEOUT_MS": "800",
+        })
+        if proc:
+            base_url = f"http://127.0.0.1:{site_port}"
+            code, deep_bh, raw_bh = curl_json(f"{base_url}/api/health?deep=1", 20)
+            print(f"   黑洞依赖 deep=1 → HTTP {code} {raw_bh[:220]}")
+            if code != 200:
+                fails.append(f"②D 黑洞依赖下 deep=1 应仍 HTTP 200，实际 {code}")
+            if probe_reason(deep_bh) != "timeout":
+                fails.append(f"②D 黑洞依赖（连上不回包）的 reason 必须是 'timeout'，实际 "
+                             f"{probe_reason(deep_bh)!r}（reason 枚举分类反转必须在这里暴露）")
+            elif probe_ok(deep_bh) is not False:
+                fails.append(f"②D 黑洞依赖下 deep=1 必须 ok=false，实际 {probe_ok(deep_bh)!r}")
+            else:
+                ms_bh = probe_ms(deep_bh)
+                print(f"   ✓ deep reason='timeout'（ms={ms_bh}，预算 800ms）")
+                if not isinstance(ms_bh, (int, float)) or ms_bh < 400:
+                    fails.append(f"②D 超时分支的 ms 应接近预算（≈800ms），实际 {ms_bh!r}")
+            # 轻量档（后台探针，预算 800ms）也必须归为 timeout
+            ok_bh, last_bh = poll_light(lambda b: probe_reason(b) == "timeout",
+                                        budget=15, interval=0.5, url=f"{base_url}/api/health")
+            if not ok_bh:
+                fails.append(f"②D 后台探针遇到黑洞依赖未给出 reason='timeout'，实际 "
+                             f"{str(last_bh[2])[:200]}")
+            else:
+                print(f"   ✓ 后台探针同样如实报 reason='timeout'（{str(last_bh[2])[:140]}）")
+    finally:
+        stop_temp_site(proc)
+        stop_blackhole_dep(lsock, bthread)
+
+    # (b) engineBase 三种写法等价：根 / 根+尾斜杠 / 完整 .../api/v1
+    srv = thread = None
+    try:
+        srv, thread, dep_state, dep_port = start_fake_dep()
+        forms = [("根地址", f"http://127.0.0.1:{dep_port}"),
+                 ("根地址+尾斜杠", f"http://127.0.0.1:{dep_port}/"),
+                 ("完整 .../api/v1", f"http://127.0.0.1:{dep_port}/api/v1")]
+        for label, base_val in forms:
+            proc = None
+            try:
+                proc, site_port, err_path = start_temp_site_ready({
+                    "OSRM_API_BASE": base_val, "HEALTH_PROBE_MS": "2000"})
+                if not proc:
+                    continue
+                base_url = f"http://127.0.0.1:{site_port}"
+                code, body_f, raw_f = curl_json(f"{base_url}/api/health", 10)
+                ok_f, last_f = poll_light(lambda b: probe_ok(b) is True,
+                                          budget=20, interval=0.5, url=f"{base_url}/api/health")
+                shown = (last_f[1] if ok_f else body_f) or {}
+                got_base = ((shown.get("engine") or {}).get("base"))
+                print(f"   engineBase {label}（{base_val}）→ HTTP {code} base={got_base!r} "
+                      f"ok={probe_ok(shown)!r} reason={probe_reason(shown)!r}")
+                if not ok_f:
+                    fails.append(f"②D engineBase 写法 {label}（{base_val}）下探针没报 ok=true："
+                                 f"{str(last_f[2])[:200]}")
+                if got_base != f"127.0.0.1:{dep_port}":
+                    fails.append(f"②D engineBase 写法 {label} 的 engine.base 应为 "
+                                 f"'127.0.0.1:{dep_port}'，实际 {got_base!r}")
+                if probe_reason(shown) is not None:
+                    fails.append(f"②D engineBase 写法 {label} 下不该有 reason，实际 {probe_reason(shown)!r}")
+            finally:
+                stop_temp_site(proc)
+        print("   ✓ 三种 engineBase 写法都能探到同一个假依赖（根/带尾斜杠/完整前缀等价）")
+    finally:
+        stop_fake_dep(srv, thread)
+
 
 # 环境快照：必须在任何杀进程动作之前
 snapshot_ports()
@@ -600,76 +1096,225 @@ else:
             # 业务断言：恢复后客户真实路径必须真的能用（密钥一致性钉在这里）
             business_quote("⑤ 恢复后")
 
-# ── ⑥ 环境变量写错不得变成忙循环（回归：Number('abc')=NaN / Number('')=0 喂给 setInterval 会退化成 1ms）
-print("\n⑥ 环境变量边界：HEALTH_PROBE_MS=abc（运维写错）不得退化成忙循环")
+# ── ⑥ tick 抛错不得带走进程（**在 dist 副本上注入必抛错**，不动仓库源文件）──
+# 断言强度说明：只断「进程存活 + 全 200」分不清「tick 干脆不跑了」——把启动 tick 与 setInterval
+# 全删掉也能满足。所以这里注入必抛错后，要求 stderr 出现 **≥2 条**失败日志，且第 2 条比第 1 条
+# 晚 **≥0.5×探针间隔**：证明「启动 tick」与「setInterval tick」两条路径都在跑、且都被 catch 兜住。
+print("\n⑥ tick 抛错不得带走进程：启动 tick + setInterval tick 两条路径都必须被 catch")
+if not NODE_EXE:
+    fails.append("找不到 node 可执行文件，无法做 tick 兜底回归")
+else:
+    mutant = make_mutant_site_bundle()
+    if not mutant:
+        print("   ✗ 无法构造注入副本（见 fails）")
+    else:
+        mcwd, mentry = mutant
+        proc = None
+        interval_ms = 2000
+        try:
+            proc, site_port, err_path = start_temp_site_ready(
+                {"HEALTH_PROBE_MS": str(interval_ms),
+                 "NODE_PATH": os.path.join(ROOT, "node_modules")},
+                cwd=mcwd, entry=mentry)
+            if proc:
+                print(f"   注入副本 PORT={site_port}（dist 副本在 {mcwd}，仓库 dist 未被改动）")
+                t_start = time.time()
+                deadline = t_start + (2 * interval_ms / 1000) + 5
+                samples = []
+                while time.time() < deadline:
+                    samples.append((time.time() - t_start, read_err(err_path).count("探针 tick 失败")))
+                    time.sleep(0.25)
+                n_fail = samples[-1][1] if samples else 0
+                t_first = next((t for t, c in samples if c >= 1), None)
+                t_second = next((t for t, c in samples if c >= 2), None)
+                print(f"   stderr 里「探针 tick 失败」= {n_fail} 条；第 1 条出现在 "
+                      f"{'%.2fs' % t_first if t_first is not None else 'N/A'}，第 2 条 "
+                      f"{'%.2fs' % t_second if t_second is not None else 'N/A'}"
+                      f"（探针间隔 {interval_ms}ms）")
+                if n_fail < 2:
+                    fails.append(f"注入必抛错后只看到 {n_fail} 条 tick 失败日志（应 ≥2：启动 tick + "
+                                 f"setInterval tick 各一次）—— 要么定时器没在跑，要么失败没被 catch 下来")
+                elif t_first is None or t_second is None or (t_second - t_first) < interval_ms / 1000 * 0.5:
+                    fails.append(f"两条 tick 失败日志间隔只有 "
+                                 f"{'%.2fs' % (t_second - t_first) if t_first is not None and t_second is not None else 'N/A'}"
+                                 f"，短于 0.5×间隔（{interval_ms / 1000 * 0.5:.1f}s）—— 定时器那条路径没真在跑")
+                else:
+                    print(f"   ✓ 两条 tick 路径都在跑且都被 catch（间隔 {t_second - t_first:.2f}s ≥ "
+                          f"0.5×{interval_ms}ms）")
+                if proc.poll() is not None:
+                    fails.append(f"注入必抛错后进程死了（exit {proc.returncode}）：未捕获的 rejection 带走了"
+                                 f"整个进程，官网连同保活端点一起挂")
+                else:
+                    code, _body, raw = curl_json(f"http://127.0.0.1:{site_port}/api/health", 10)
+                    print(f"   进程存活；轻量档 → HTTP {code}")
+                    if code != 200:
+                        fails.append(f"tick 持续失败时轻量档应仍 HTTP 200，实际 {code} {raw[:160]}")
+                # deep 的异常分支：ms 必须是**实测耗时**（不许硬编码 0），日志要能区分「内部异常」与「依赖不可达」
+                code_d, deep_m, raw_d = curl_json(f"http://127.0.0.1:{site_port}/api/health?deep=1", 20)
+                ms_m = probe_ms(deep_m)
+                print(f"   deep=1（探测内部必抛错）→ HTTP {code_d} ms={ms_m!r} "
+                      f"reason={probe_reason(deep_m)!r}")
+                if code_d != 200 or probe_ok(deep_m) is not False:
+                    fails.append(f"deep 探测内部异常时应 HTTP 200 + ok=false，实际 {code_d} {raw_d[:160]}")
+                if probe_reason(deep_m) not in ("unreachable", "internal"):
+                    fails.append(f"deep 异常分支的 reason 必须在枚举内，实际 {probe_reason(deep_m)!r}")
+                if not isinstance(ms_m, (int, float)) or ms_m < 150:
+                    fails.append(f"deep 异常分支的 ms 必须是**实测耗时**（注入的失败在 300ms 后抛出），"
+                                 f"实际 {ms_m!r} —— 硬编码 0 会把「测量失败」伪装成「未测量」")
+                else:
+                    print(f"   ✓ deep 异常分支 ms={ms_m} 是实测耗时（不是硬编码 0）")
+                err_now = read_err(err_path)
+                if "deep 探测内部异常" not in err_now:
+                    fails.append("deep 异常分支的日志没有区分「内部异常」与「依赖不可达」（必须能区分，"
+                                 "否则代码 bug 会被伪装成依赖故障）")
+                else:
+                    print("   ✓ 日志里明确标出「deep 探测内部异常（不是依赖不可达）」")
+                print(f"   （stderr 尾部：{err_now.strip().splitlines()[-1][:160] if err_now.strip() else '(空)'}）")
+        finally:
+            stop_temp_site(proc)            # 先停临时站点（它会一直打假依赖）
+
+# ── ⑦ 环境变量边界：回落 / 夹下限 / **夹上界**，三种分支都不得变成忙循环 ──
+# 阈值按分支收紧（原版只有 'abc' 一例且阈值 8，注释自称应 ≤2）：
+#   回落（abc / 0 / 空串）→ 3s 内 ≤1 次（只有启动那一次）；夹下限（50→1000ms）→ 3s 内约 3~6 次；
+#   夹上限（2³² → 2³¹−1）→ 3s 内 ≤1 次。**并且必须在 stderr 看到被拒的原始值**（静默夹紧 = 运维查不出）。
+print("\n⑦ 环境变量边界：回落 / 夹下限 / 夹上限，且都必须把被拒的原始值打进 stderr")
 if not NODE_EXE:
     fails.append("找不到 node 可执行文件，无法做 env 边界回归")
 else:
     srv = thread = None
-    proc = None
     try:
-        srv, thread, state, dep_port = start_fake_dep()
-        proc, site_port = start_temp_site({"OSRM_API_BASE": f"http://127.0.0.1:{dep_port}",
-                                           "HEALTH_PROBE_MS": "abc"})
-        print(f"   临时站点 PORT={site_port} / 假依赖 PORT={dep_port}（HEALTH_PROBE_MS=abc）")
-        up = False
-        for _ in range(40):
-            if curl(f"http://127.0.0.1:{site_port}/api/health", 3, want_code=True)[0] == 200:
-                up = True
-                break
-            time.sleep(0.5)
-        if not up:
-            fails.append(f"env 边界用例：临时站点 {site_port} 未起来（跳过频率断言）")
-        else:
-            state["hits"] = 0
-            time.sleep(3)
-            hits = state["hits"]
-            print(f"   3 秒内假依赖收到 {hits} 次 /health")
-            if hits > 8:
-                fails.append(f"HEALTH_PROBE_MS=abc 让探针变成了忙循环：3 秒 {hits} 次"
-                             f"（应 ≤2；归一后应为 1 次启动探测 + 60s 间隔）")
-            else:
-                print("   ✓ env 写错时已回落到默认间隔（没有变成忙循环）")
-            code, body, raw = curl_json(f"http://127.0.0.1:{site_port}/api/health", 5)
-            if code != 200 or probe_ok(body) is not True:
-                fails.append(f"env 边界用例：临时站点健康检查异常 HTTP {code} {raw[:160]}")
-    finally:
-        stop_temp_site(proc)            # 先停临时站点（它会一直打假依赖）
-        stop_fake_dep(srv, thread)      # 再收假依赖：非 daemon 线程必须 join，否则退出码不可信
+        srv, thread, dep_state, dep_port = start_fake_dep()
+        cases = [
+            ("abc", "fallback", 1, None),
+            ("0", "fallback", 1, None),
+            ("", "fallback", 1, None),
+            ("50", "clamp_low", 8, "低于下限"),
+            ("4294967296", "clamp_high", 1, "超过上限"),
+        ]
+        for value, kind, max_hits, expect_warn in cases:
+            proc = None
+            try:
+                proc, site_port, err_path = start_temp_site_ready({
+                    "OSRM_API_BASE": f"http://127.0.0.1:{dep_port}",
+                    "HEALTH_PROBE_MS": value})
+                if not proc:
+                    continue
+                dep_state["hits"] = 0
+                time.sleep(3)
+                hits = dep_state["hits"]
+                err_text = read_err(err_path)
+                shown = json.dumps(value)
+                print(f"   HEALTH_PROBE_MS={shown:<14}（{kind}）3 秒内假依赖收到 {hits} 次 /health")
+                if hits > max_hits:
+                    fails.append(f"HEALTH_PROBE_MS={shown}（{kind}）让探针变成了忙循环：3 秒 {hits} 次"
+                                 f"（应 ≤{max_hits}）—— 会把引擎 IP 限流额度吃光，客户测算会吃 429")
+                if kind == "clamp_low" and hits < 2:
+                    fails.append(f"HEALTH_PROBE_MS={shown} 应夹到下限 1000ms（3 秒该有 3~6 次探针），"
+                                 f"实际只探了 {hits} 次 —— 夹下限没生效")
+                if f'环境变量 HEALTH_PROBE_MS={shown}' not in err_text:
+                    fails.append(f"HEALTH_PROBE_MS={shown}（{kind}）被拒/被夹时**没有**在 stderr 打出被拒的"
+                                 f"原始值（运维看不出自己的值没生效）")
+                if expect_warn and expect_warn not in err_text:
+                    fails.append(f"HEALTH_PROBE_MS={shown} 的告警文本里没有「{expect_warn}」："
+                                 f"stderr={err_text.strip()[:200]!r}")
+                if (f'环境变量 HEALTH_PROBE_MS={shown}' in err_text
+                        and (not expect_warn or expect_warn in err_text)):
+                    print(f"   ✓ {kind}：已按规则处理，且 stderr 有告警（含被拒原值）")
+                code, body, raw = curl_json(f"http://127.0.0.1:{site_port}/api/health", 5)
+                if code != 200:
+                    fails.append(f"env 边界用例 {shown}：临时站点健康检查异常 HTTP {code} {raw[:160]}")
+                elif probe_ok(body) is not True:
+                    # 回落分支的站点 60s 才探第二次，只靠「启动那一次」判 ok=true 会被环境抖动放大成假红。
+                    # 兜底再证一次：deep=1 是当场实时探测（独立请求），它 ok=true 就说明探针本身没坏。
+                    _c3, deep_e, raw_e = curl_json(f"http://127.0.0.1:{site_port}/api/health?deep=1", 20)
+                    if probe_ok(deep_e) is not True:
+                        fails.append(f"env 边界用例 {shown}：探针打不通假依赖（轻量 {raw[:160]} / "
+                                     f"deep {raw_e[:160]}）—— 归一逻辑把探测弄坏了")
+                    else:
+                        print(f"   （启动那次探针 ok=false（reason={probe_reason(body)!r}），"
+                              f"deep=1 实时探测 ok=true → 按环境抖动处理，不判失败）")
+            finally:
+                stop_temp_site(proc)
 
-# ── ⑦ 未配置分支：不设 OSRM_API_BASE → reason 必须 == 'not_configured' ────
-print("\n⑦ 未配置分支：不设 OSRM_API_BASE → reason 必须 == 'not_configured'")
+        # 同类漏洞的另两张脸：超上限的**预算**会把活引擎误报成 timeout（假告警）
+        # Node 定时器把 2³² 回绕成 ~1ms → abort 立刻触发 → **活引擎**被判 timeout。
+        # 这里用**慢依赖（1.5s 回包）**让这件事可确定地暴露：预算若真被夹到上限，1.5s 的探测照样成功；
+        # 若没夹（回绕成 1ms），abort 会在依赖回包前触发 → 活依赖被误报 ok=false/reason='timeout'。
+        print("   → HEALTH_DEEP_TIMEOUT_MS / HEALTH_PROBE_TIMEOUT_MS 写 2³² 不得把活引擎误报成 timeout")
+        srv2 = thread2 = None
+        proc = None
+        try:
+            srv2, thread2, _st2, slow_port = start_fake_dep(delay_s=1.5)
+            proc, site_port, err_path = start_temp_site_ready({
+                "OSRM_API_BASE": f"http://127.0.0.1:{slow_port}",
+                "HEALTH_DEEP_TIMEOUT_MS": "4294967296",
+                "HEALTH_PROBE_TIMEOUT_MS": "4294967296",
+                "HEALTH_PROBE_MS": "2000"})
+            if proc:
+                code, deep_b, raw_b = curl_json(f"http://127.0.0.1:{site_port}/api/health?deep=1", 20)
+                print(f"   活依赖（1.5s 回包）deep=1 → HTTP {code} {raw_b[:200]}")
+                if code != 200 or probe_ok(deep_b) is not True:
+                    fails.append(f"预算写 2³² 时活依赖被误报成不可达/超时（假告警）：{raw_b[:220]}")
+                elif probe_reason(deep_b) is not None:
+                    fails.append(f"活依赖不该有 reason，实际 {probe_reason(deep_b)!r}（预算回绕成 ~1ms → 假 timeout）")
+                else:
+                    print(f"   ✓ 预算超上限被夹紧，活依赖仍如实报 ok=true（ms={probe_ms(deep_b)}）")
+                ok_bg, last_bg = poll_light(lambda b: probe_ok(b) is not None and probe_ok(b) is True,
+                                            budget=15, interval=0.5,
+                                            url=f"http://127.0.0.1:{site_port}/api/health")
+                if not ok_bg:
+                    fails.append(f"后台探针的预算写 2³² 后把活依赖误报成不可达：{str(last_bg[2])[:200]}")
+                else:
+                    print("   ✓ 后台探针（预算同样夹到上限）也如实报 ok=true")
+                err_text = read_err(err_path)
+                for name in ("HEALTH_DEEP_TIMEOUT_MS", "HEALTH_PROBE_TIMEOUT_MS"):
+                    if f'环境变量 {name}="4294967296"' not in err_text or "超过上限" not in err_text:
+                        fails.append(f"{name}=4294967296 被夹紧时没有在 stderr 打出被拒原值 + 「超过上限」："
+                                     f"stderr={err_text.strip()[:200]!r}")
+                if f'环境变量 HEALTH_DEEP_TIMEOUT_MS="4294967296"' in err_text and "超过上限" in err_text:
+                    print("   ✓ 两个超上限预算都在 stderr 打了被拒原值与「超过上限」告警")
+        finally:
+            stop_temp_site(proc)
+            stop_fake_dep(srv2, thread2)
+    finally:
+        stop_fake_dep(srv, thread)      # 非 daemon 线程必须 join，否则退出码不可信
+
+# ── ⑧ 未配置分支：不设 OSRM_API_BASE → reason 必须 == 'not_configured' ────
+print("\n⑧ 未配置分支：不设 OSRM_API_BASE → reason 必须 == 'not_configured'")
 if not NODE_EXE:
     fails.append("找不到 node 可执行文件，无法验证未配置分支")
 else:
     proc = None
     try:
-        proc, site_port = start_temp_site({"OSRM_API_BASE": None, "HEALTH_PROBE_MS": "4000"})
-        print(f"   临时站点 PORT={site_port}（OSRM_API_BASE 未设）")
-        ok, last = poll_light(lambda b: probe_reason(b) == "not_configured",
-                              url=f"http://127.0.0.1:{site_port}/api/health", budget=20, interval=0.5)
-        code, body, raw = last
-        print(f"   轻量 → HTTP {code} {raw[:260]}")
-        if not ok:
-            fails.append(f"未配置 OSRM_API_BASE 时 lastProbe.reason 必须是 'not_configured'，"
-                         f"实际 {probe_reason(body)!r}")
-        else:
-            eng7 = (body or {}).get("engine") or {}
-            lp7 = eng7.get("lastProbe") or {}
-            if eng7.get("configured") is not False:
-                fails.append(f"未配置时 engine.configured 应为 false，实际 {eng7.get('configured')!r}")
-            if eng7.get("base") is not None:
-                fails.append(f"未配置时 engine.base 应为 null，实际 {eng7.get('base')!r}")
-            if lp7.get("ok") is not False:
-                fails.append(f"未配置时 lastProbe.ok 应为 false，实际 {lp7.get('ok')!r}")
-            if lp7.get("ms") != 0:
-                fails.append(f"未配置时 lastProbe.ms 应为 0（不发起任何请求），实际 {lp7.get('ms')!r}")
-            print("   ✓ 未配置分支如实报告：configured=false lastProbe.reason='not_configured'")
+        proc, site_port, err_path = start_temp_site_ready({"OSRM_API_BASE": None, "HEALTH_PROBE_MS": "4000"})
+        if proc:
+            print(f"   临时站点 PORT={site_port}（OSRM_API_BASE 未设）")
+            ok, last = poll_light(lambda b: probe_reason(b) == "not_configured",
+                                  url=f"http://127.0.0.1:{site_port}/api/health", budget=20, interval=0.5)
+            code, body, raw = last
+            print(f"   轻量 → HTTP {code} {raw[:260]}")
+            if not ok:
+                fails.append(f"未配置 OSRM_API_BASE 时 lastProbe.reason 必须是 'not_configured'，"
+                             f"实际 {probe_reason(body)!r}")
+            else:
+                eng7 = (body or {}).get("engine") or {}
+                lp7 = eng7.get("lastProbe") or {}
+                if eng7.get("configured") is not False:
+                    fails.append(f"未配置时 engine.configured 应为 false，实际 {eng7.get('configured')!r}")
+                if eng7.get("base") is not None:
+                    fails.append(f"未配置时 engine.base 应为 null，实际 {eng7.get('base')!r}")
+                if lp7.get("ok") is not False:
+                    fails.append(f"未配置时 lastProbe.ok 应为 false，实际 {lp7.get('ok')!r}")
+                if lp7.get("ms") != 0:
+                    fails.append(f"未配置时 lastProbe.ms 应为 0（不发起任何请求），实际 {lp7.get('ms')!r}")
+                print("   ✓ 未配置分支如实报告：configured=false lastProbe.reason='not_configured'")
     finally:
         stop_temp_site(proc)
 
 # ── 收尾 ───────────────────────────────────────────────────────────────
 restore_all()      # 幂等：只补回「原本在跑、现在掉了」的端口（正常路径下是空操作）
 print()
+if MEASURED_INTERVAL_S is not None:
+    print(f"（实测探针间隔 {MEASURED_INTERVAL_S:.1f}s → 等待预算 {WAIT_BUDGET_S:.1f}s）")
 print("全部通过 ✅" if not fails else "存在问题：\n  - " + "\n  - ".join(fails))
 sys.exit(1 if fails else 0)
