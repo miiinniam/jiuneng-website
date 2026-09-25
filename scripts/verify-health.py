@@ -5,7 +5,9 @@
 
 环境变量：
     SITE_URL / ENGINE_API_KEY(或 OSRM_ENGINE_KEY，**必填**，拒绝默认值)
-    HEALTH_PROBE_WAIT（秒，**显式覆盖**等待预算；不设则按实测探针间隔自动推 ≥ 2×间隔，下限 5s）
+    HEALTH_PROBE_WAIT（秒，**显式覆盖**等待预算；不设则按实测探针间隔自动推 ≥ 2×间隔，下限 5s。
+                       **只接受有限正值**：nan / inf / 负数 / 0 / 非数字一律记 fail + 明确报错 + 立刻以 2 退出，
+                       绝不静默回落 —— nan/inf 会让 deadline 永不到期、脚本在失败路径上挂死）
     HEALTH_PROBE_MEASURE_CAP（秒，实测间隔的采样上限，默认 75）
     ENGINE_PY / ENGINE_CWD（覆盖本机引擎运行时路径，默认见下）
 
@@ -41,15 +43,30 @@
     **端口自证**（`GET /gateway/health` 回出 `gateway: "jiuneng-osrm-gateway"` 指纹）；两者都不满足 → 拒杀并记失败
   - 端口**没有监听**时 kill_port 记为失败（不是静默跳过）：否则配置了依赖却没监听会整段跳过降级断言、
     脚本仍打「全部通过」= 假绿
-  - 进杀进程阶段前记下哪些端口原本在跑；正常结束/异常/Ctrl-C 都只恢复原本在跑的那些，绝不留孤儿进程
+  - 进杀进程阶段前记下哪些端口原本在跑（连同它们的 CommandLine）；正常结束/异常/Ctrl-C 都只恢复原本在跑的那些，
+    绝不留孤儿进程。**「恢复」= 重新拉起的<新进程>，不等于还原原进程**（PID/命令行都会变）——
+    报告里必须如实这么说，别把「端口又能应答了」说成「环境已还原」
+  - 拉起的依赖进程，命令行里**必须带绝对路径**（start_port 用 abspath 强制）：否则 CommandLine 里只剩
+    `server.py`，下一次身份核验只能靠弱标识 + 端口自证；从**副本**跑脚本时，绝对路径也是唯一能让人看出
+    「18001 上坐的是副本进程」的线索 —— 这种情况必须**大声告警**（脚本会用它重启线上端口）
   - 临时站点与假依赖一律 try/finally 收干净（非 daemon 线程 + shutdown/server_close/join，避免解释器关闭时
     与仍在写 stderr 的线程抢锁 → 断言全过却以 127 退出）
   - **所有**子进程调用（curl / netstat / powershell）都带 Python 级 timeout：任一挂住 → 脚本永不退出，
     已经被 ④ 杀掉的依赖就永远等不到 finally/atexit 的恢复
+  - **所有 deadline 必须有限**：`deadline = time.time() + nan/inf` 之后 `time.time() >= deadline` **恒为 False**
+    → 轮询永不返回。所以 HEALTH_PROBE_WAIT 只接受有限正值（非法值记 fail + 报错 + 立刻以 2 退出，不静默回落），
+    并且 poll_light/实测采样上限在算 deadline 前再过一道有限性兜底（将来新增入口也漏不进来）
+  - 假依赖/黑洞依赖的监听端口**不落在本机动态端口范围**内（本机实测 1024–15000）：临时站点（node）的**出站
+    连接也从这一段取源端口**，撞车时站点侧得到 ECONNREFUSED → `reason='unreachable'`，表现成「产品把活依赖
+    误报成不可达」的**假红**（实测撞过一次，端口 4190）。见 `dynamic_safe_port()`
 
 等待预算为什么不能写死：默认配置下（文档配方未设 HEALTH_PROBE_MS）探针间隔是 60s，依赖死后轻量档要
 **约 60s** 才变 degraded；原版写死 20s = **必然假红**。所以先实测间隔（采样 lastProbe.at 两次求差）再推
 `budget = max(2 × interval, 5.0)`；`HEALTH_PROBE_WAIT` 保留为显式覆盖。
+
+覆盖值是**双刃剑**：非法的覆盖值曾经有两种坏结果 —— 非数字被**静默**换成写死的 20.0（运维以为生效了），
+nan/inf 被 max(x, 0.0) 原样放行后灌进 deadline（永不退出，被杀掉的依赖等不到 atexit 恢复）。
+现在两种都变成「记 fail + 明确报错 + 退出码 2」，且**在任何破坏性操作之前**拒绝启动。
 
 本机 python urllib 走 127.0.0.1 会被环境拦截，统一 subprocess 调 curl（沿用 scripts/probe-quote-api.py 风格）。
 **退出码即结论**：0 = 全部通过，非 0 = 有失败项。
@@ -58,7 +75,9 @@ import atexit
 import datetime
 import http.server
 import json
+import math
 import os
+import random
 import shutil
 import signal
 import socket
@@ -82,19 +101,17 @@ ENGINE_PORT = 18000                                  # 原始引擎（AIOSRM++ r
 GATEWAY_PORT = 18001                                 # 官网专用网关（deploy/osrm-engine/server.py，内嵌引擎 app）
 # 等待预算：**不写死**。默认为 None → 由实测探针间隔推出（max(2×间隔, 5s)，见 measure_wait_budget）。
 # HEALTH_PROBE_WAIT 仍可显式覆盖（原版写死 20s，在默认 60s 间隔的站点上必然假红）。
+# 覆盖值本身要**过校验**（只接受有限正值）——校验在下面 fails 定义之后，非法值就地退出 2。
 WAIT_BUDGET_OVERRIDE: float | None = None
-try:
-    _raw_wait = os.environ.get("HEALTH_PROBE_WAIT")
-    if _raw_wait not in (None, ""):
-        WAIT_BUDGET_OVERRIDE = max(float(_raw_wait), 0.0)
-except ValueError:
-    WAIT_BUDGET_OVERRIDE = 20.0
-WAIT_BUDGET_S: float = WAIT_BUDGET_OVERRIDE if WAIT_BUDGET_OVERRIDE is not None else 20.0   # 实测前的保守兜底
+WAIT_BUDGET_S: float = 20.0                  # 实测前的保守兜底（只在校验通过的路径上被覆盖）
 MEASURED_INTERVAL_S: float | None = None
 PY = os.environ.get("ENGINE_PY", "D:/01_业务/立三方/AIOSRM++/.venv-build/Scripts/python.exe")
 ENGINE_CWD = os.environ.get("ENGINE_CWD", "D:/01_业务/立三方/AIOSRM++/backend")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GATEWAY_CWD = os.path.join(ROOT, "deploy", "osrm-engine")
+# 脚本是不是「从仓库根跑」的：副本（临时拷贝、scratch 下的副本）里没有 .git。
+# 这一位决定 ④⑤ 的「重新拉起」会不会拿**副本路径**去替换本机长驻服务 → 必须大声告警（见 start_port / 启动横幅）。
+IS_REPO_ROOT = os.path.exists(os.path.join(ROOT, ".git"))
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 # 杀进程白名单：端口 → 命令行里**必须**出现的**弱**子串（以 cwd 方式启动时命令行只剩这些）。
 # 原版只钉弱串就直接杀，实测会把无关进程（如 `python -m http.server 18014`）杀掉；现在弱串还要过「端口自证」，见 identity_check。
@@ -128,6 +145,47 @@ SITE_QUOTE_BODY = {"origin": "上海", "destination": "河内", "border": "友�
                    "vehicle_model_id": "flatbed_13m"}
 
 fails: list[str] = []
+
+
+# ── HEALTH_PROBE_WAIT 校验（必须在任何破坏性操作之前）────────────────────
+def parse_wait_override(raw):
+    """HEALTH_PROBE_WAIT → (覆盖值 | None, 错误说明 | None)。**只接受有限正值**，绝不静默回落。
+
+    为什么必须拒 nan / inf：`deadline = time.time() + nan` 之后 `time.time() >= deadline` **恒为 False**
+    （inf 同理）→ `poll_light` 永不返回。在 ④「依赖已杀、站点又始终不降级」这条**失败路径**上，
+    脚本就挂死在那里；而恢复逻辑只在 atexit / Ctrl-C 里跑 ⇒ 被杀的依赖永远等不到恢复。
+    为什么必须拒非数字 / ≤0，而不是回落默认：原实现把非数字**静默**换成写死的 20.0（正是本次从
+    measure_wait_budget 删掉的那个值），运维会以为自己设的覆盖生效了；≤0 则让每个等待预算立刻到期，
+    ④⑤ 的降级/恢复断言必然假红。
+    """
+    if raw is None or raw.strip() == "":
+        return None, None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None, (f"HEALTH_PROBE_WAIT={raw!r} 不是数字：只接受有限正值秒数（例：HEALTH_PROBE_WAIT=30）")
+    if not math.isfinite(value):
+        return None, (f"HEALTH_PROBE_WAIT={raw!r} 不是有限值：nan/inf 会让 deadline 永不到期"
+                      f"（time.time() >= time.time()+nan 恒为 False）→ 脚本在失败路径（依赖已杀、站点不降级）"
+                      f"上永不退出，被杀的依赖等不到 atexit 恢复")
+    if value <= 0:
+        return None, (f"HEALTH_PROBE_WAIT={raw!r} 不是正值：≤0 会让每个等待预算立刻到期，"
+                      f"④⑤ 的降级/恢复断言必然假红")
+    return value, None
+
+
+WAIT_BUDGET_OVERRIDE, _WAIT_ERR = parse_wait_override(os.environ.get("HEALTH_PROBE_WAIT"))
+if _WAIT_ERR:
+    # 非法 = 失败：记 fail + 明确报错 + **立刻**以 2 退出（2 = 参数/环境非法，区别于断言失败的 1）。
+    # 必须在这里就停：再往下走一步就会先做破坏性操作（杀依赖），而挂死时没人恢复它。
+    fails.append(_WAIT_ERR)
+    print(f"\n✗ {_WAIT_ERR}")
+    print("  拒绝启动：HEALTH_PROBE_WAIT 只接受**有限正值**（不接受 nan / inf / 负数 / 0 / 非数字），"
+          "不允许静默回落。")
+    print("  未做任何破坏性操作：依赖（18000/18001）未被触碰。")
+    print("\n存在问题：\n  - " + "\n  - ".join(fails))
+    print("（退出码 2 = 参数/环境非法，不是断言失败）")
+    sys.exit(2)
 
 
 # ── HTTP（统一走 curl：本机 urllib 直连 127.0.0.1 会被环境拦截）──────────
@@ -286,37 +344,79 @@ def kill_port(port, expect=None):
 
 
 def start_port(port):
-    """只认识本机开发端口（18000/18001）；别的端口不许乱拉，避免留孤儿进程。"""
+    """只认识本机开发端口（18000/18001）；别的端口不许乱拉，避免留孤儿进程。
+
+    ⚠️ 两条纪律（都来自实测事故）：
+    ① **命令行里必须放绝对路径**（下面用 os.path.abspath 强制）。原版把 `os.path.join(ENGINE_CWD, ...)`
+       原样传进 Popen：ENGINE_CWD 一旦是相对路径，Windows 的 CommandLine 里就只剩 `run_server.py`/
+       `server.py` 这种弱串 —— 下一次身份核验只能靠「弱标识 + 端口自证」，实测根本核不出 18001 上坐的是谁。
+    ② 从**副本**跑本脚本时，这条启动路径会拿副本里的 `server.py` 去顶替线上 18001 —— 必须大声告警，
+       并且报告里如实说「恢复 = 新进程」（PID / 命令行 / 代码版本都不等价于原进程）。
+    """
     if port == ENGINE_PORT:
-        subprocess.Popen([PY, os.path.join(ENGINE_CWD, "run_server.py"), "--port", str(port)],
-                         cwd=ENGINE_CWD, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cwd = os.path.abspath(ENGINE_CWD)
+        exe = os.path.abspath(os.path.join(cwd, "run_server.py"))
+        cmd, env = [PY, exe, "--port", str(port)], None
     elif port == GATEWAY_PORT:
-        env = {**os.environ, "PORT": str(port), "ENGINE_API_KEY": KEY}
-        subprocess.Popen([PY, os.path.join(GATEWAY_CWD, "server.py")], cwd=GATEWAY_CWD, env=env,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cwd = os.path.abspath(GATEWAY_CWD)
+        exe = os.path.abspath(os.path.join(cwd, "server.py"))
+        cmd, env = [PY, exe], {**os.environ, "PORT": str(port), "ENGINE_API_KEY": KEY}
     else:
         fails.append(f"不知道该怎样拉起端口 {port}（不是本机已知开发端口）")
         return False
+    if not IS_REPO_ROOT:
+        print(f"   ⚠️⚠️ 警告：本脚本不是从仓库根跑的（ROOT={ROOT} 下没有 .git）——\n"
+              f"        现在用**副本路径** {exe} 重启线上端口 {port}。\n"
+              f"        新进程是「副本进程」：身份 / 命令行 / 代码版本都不等价于原来的进程，"
+              f"核验时一律按这条绝对路径认（别按端口号猜）。", flush=True)
+    print(f"   拉起 {port}：{cmd[0]} {exe}（cwd={cwd}；命令行含绝对路径 → CommandLine 可直接核身份）", flush=True)
+    proc = subprocess.Popen(cmd, cwd=cwd, env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(60):
         if curl(f"http://127.0.0.1:{port}/health", 3, want_code=True)[0] == 200:
+            pid = pid_on(port)
+            _name, cl = proc_info(pid) if pid else ("", "")
+            print(f"   ✓ {port} 已就绪：**新进程** PID={pid}（「恢复」不等于还原原进程：PID/命令行都会变）"
+                  f"\n      新进程 CommandLine = {cl[:200]!r}", flush=True)
             return True
         time.sleep(1)
+    try:
+        if proc.poll() is not None:
+            fails.append(f"拉起 {port} 的进程已退出（exit {proc.returncode}）：多半是端口被占/"
+                         f"路径或运行时不对 —— 命令行 {cmd!r}")
+    except Exception:
+        pass
     return False
 
 
 # ── 恢复护栏：只恢复「进杀进程阶段前原本在跑」的端口；异常/Ctrl-C 也要恢复 ──
 ports_running_before: dict[int, bool] = {}
+ports_argv_before: dict[int, str] = {}       # 杀之前的 CommandLine（报告里对比「新进程 ≠ 原进程」）
+ports_pid_before: dict[int, str] = {}        # 杀之前的 PID（用来判「是不是同一个进程」）
 _restoring = False
 
 
 def snapshot_ports():
     for p in (ENGINE_PORT, GATEWAY_PORT):
-        ports_running_before[p] = pid_on(p) is not None
+        pid = pid_on(p)
+        ports_running_before[p] = pid is not None
+        if pid:
+            ports_pid_before[p] = pid
+            _name, cl = proc_info(pid)
+            ports_argv_before[p] = f"PID {pid} · {cl}"
     print(f"   （环境快照：原本在跑 = {[p for p, up in ports_running_before.items() if up] or '无'}）")
+    for p, desc in ports_argv_before.items():
+        print(f"      {p} 原进程 = {desc[:220]}")
+    if not IS_REPO_ROOT:
+        print(f"   ⚠️ 本脚本不是从仓库根跑的（ROOT={ROOT}）→ 一旦需要「重新拉起」，用的会是**副本路径**。")
 
 
 def restore_all():
-    """幂等：只在「原本在跑、现在掉了」时才拉起。"""
+    """幂等：只在「原本在跑、现在掉了」时才拉起。
+
+    ⚠️ 如实说清：「恢复」= 用 start_port 拉起的**新进程**，不是把原进程还原回来 ——
+    PID、CommandLine、进程内状态（计数/缓存）都会变。别把「端口又能应答了」当成「环境已还原」。
+    """
     global _restoring
     if _restoring:
         return
@@ -326,7 +426,9 @@ def restore_all():
             if not was_running:
                 continue
             if pid_on(p) is None:
-                print(f"   [恢复] {p} 原本在跑但现在掉了 → 重新拉起 …", flush=True)
+                print(f"   [恢复] {p} 原本在跑但现在掉了 → 用**新进程**重新拉起 …", flush=True)
+                if ports_argv_before.get(p):
+                    print(f"          （原进程 = {ports_argv_before[p][:200]}）", flush=True)
                 start_port(p)
     except Exception as exc:                                   # 恢复失败也不能再往外抛
         print(f"   [恢复] 出错：{exc}", flush=True)
@@ -349,6 +451,25 @@ except (ValueError, AttributeError, OSError):
 
 
 # ── 轮询/断言小工具 ────────────────────────────────────────────────────
+def finite_budget(value, what="等待预算", fallback=20.0):
+    """**deadline 的最后一道闸**：非有限/非正的值一律不许变成 deadline。
+
+    `deadline = time.time() + nan/inf` 之后 `time.time() >= deadline` 恒为 False → 轮询永不返回。
+    HEALTH_PROBE_WAIT 已在启动时被拒（退出 2），这里是给「将来新增的入口」兜底：一旦漏进来，
+    就地记 fail + 夹成有限值，绝不让脚本挂死。
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        v = float("nan")
+    if not math.isfinite(v) or v <= 0:
+        fails.append(f"{what}={value!r} 非有限/非正值：会造成永不到期的 deadline（脚本永不退出），"
+                     f"已强制回落到 {fallback}s")
+        print(f"   ✗ {what}={value!r} 非有限/非正 → deadline 兜底为 {fallback}s（并记失败）")
+        return float(fallback)
+    return v
+
+
 def poll_light(pred, budget=None, interval=1.0, url=None):
     """轮询轻量档直到 pred(body) 为真（后台探针有 HEALTH_PROBE_MS 间隔，不能立刻断言）。
 
@@ -356,7 +477,7 @@ def poll_light(pred, budget=None, interval=1.0, url=None):
     `HEALTH_PROBE_WAIT=0` 时会返回 (False, None)，调用方一解包就 TypeError，而那一刻依赖刚被杀掉。
     """
     url = url or f"{SITE}/api/health"
-    deadline = time.time() + (WAIT_BUDGET_S if budget is None else budget)
+    deadline = time.time() + finite_budget(WAIT_BUDGET_S if budget is None else budget, "poll_light 等待预算")
     while True:
         last = curl_json(url, 10)
         code, body, _raw = last
@@ -404,13 +525,14 @@ def measure_wait_budget():
     global WAIT_BUDGET_S, MEASURED_INTERVAL_S
     url = f"{SITE}/api/health"
     if WAIT_BUDGET_OVERRIDE is not None:
-        WAIT_BUDGET_S = WAIT_BUDGET_OVERRIDE
+        WAIT_BUDGET_S = finite_budget(WAIT_BUDGET_OVERRIDE, "HEALTH_PROBE_WAIT", 20.0)
         print(f"   （等待预算 {WAIT_BUDGET_S}s 来自显式覆盖 HEALTH_PROBE_WAIT，不做间隔实测）")
         return
     try:
         cap = float(os.environ.get("HEALTH_PROBE_MEASURE_CAP") or 75)
     except ValueError:
         cap = 75.0
+    cap = finite_budget(cap, "HEALTH_PROBE_MEASURE_CAP", 75.0)     # 采样上限同样不许非有限（否则轮询挂死）
     _code, body, _raw = curl_json(url, 15)
     at1 = probe_at(body)
     if at1 is None:
@@ -438,7 +560,7 @@ def measure_wait_budget():
         fails.append(f"无法实测探针间隔：{cap}s 内 lastProbe.at 始终没变化（后台探针没在跑？）")
         print(f"   ✗ {cap}s 内 lastProbe.at 未变化 → 退回默认预算 {WAIT_BUDGET_S}s（并记失败）")
         return
-    WAIT_BUDGET_S = max(2 * MEASURED_INTERVAL_S, 5.0)
+    WAIT_BUDGET_S = finite_budget(max(2 * MEASURED_INTERVAL_S, 5.0), "由实测间隔推出的等待预算", 20.0)
     print(f"   实测探针间隔 = {MEASURED_INTERVAL_S:.1f}s（采样 lastProbe.at 两次求差）"
           f" → 等待预算 = max(2×间隔, 5s) = {WAIT_BUDGET_S:.1f}s")
 
@@ -561,6 +683,36 @@ def stop_temp_site(proc):
         pass
 
 
+# 假依赖 / 黑洞依赖的监听端口必须**避开本机动态端口范围**：本机 `netsh int ipv4 show dynamicport tcp`
+# = 起始 1024、13977 个（→ 1024–15000），而临时站点（node）的**出站连接也从这一段取源端口**。
+# 实测撞过一次：假依赖 bind 在 4190，站点侧对它的探测一律 ECONNREFUSED → `reason='unreachable'`，
+# 表现成「产品把活依赖误报成不可达」的**假红**（而产品没问题）。做法：只在动态范围之上取端口，
+# 并把长驻服务端口排除掉。
+DYNAMIC_PORT_MAX = 15000
+DEP_PORT_MIN = DYNAMIC_PORT_MAX + 1000                       # 16000
+DEP_PORT_MAX = 32000
+RESERVED_PORTS = {ENGINE_PORT, GATEWAY_PORT, 18123}          # 长驻引擎/网关 + 另一个脚本的挂起桩
+
+
+def dynamic_safe_port():
+    """在动态端口范围之外取一个「此刻真能 bind」的端口（避开与出站源端口撞车）。拿不到就退回 0（OS 自选）。"""
+    for _ in range(50):
+        port = random.randint(DEP_PORT_MIN, DEP_PORT_MAX)
+        if port in RESERVED_PORTS:
+            continue
+        probe = socket.socket()
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError:
+            continue
+        finally:
+            probe.close()
+        return port
+    fails.append(f"动态端口范围之外（>{DYNAMIC_PORT_MAX}）找不到可用端口 → 退回让 OS 自选；"
+                 f"在本机上这与出站源端口撞车过一次（假依赖不可达 = 假红）")
+    return 0
+
+
 def start_fake_dep(delay_s=0.0, body=b'{"status":"ok"}'):
     """计数用的假依赖（可加**可控延迟**：并发断言必须让请求真的重叠，at 时序断言需要确定的耗时差）。
 
@@ -595,7 +747,7 @@ def start_fake_dep(delay_s=0.0, body=b'{"status":"ok"}'):
         def handle_error(self, request, client_address):        # socketserver 默认会把整段 traceback 打进 stderr
             pass
 
-    srv = _Quiet(("127.0.0.1", 0), _Handler)
+    srv = _Quiet(("127.0.0.1", dynamic_safe_port()), _Handler)
     port = srv.server_address[1]
     thread = threading.Thread(target=srv.serve_forever, name="fake-dep", daemon=False)
     thread.start()
@@ -628,7 +780,7 @@ def start_blackhole_dep():
     """
     lsock = socket.socket()
     lsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    lsock.bind(("127.0.0.1", 0))
+    lsock.bind(("127.0.0.1", dynamic_safe_port()))
     lsock.listen(64)
     port = lsock.getsockname()[1]
     state = {"accepted": 0, "stop": False}
@@ -691,6 +843,16 @@ def make_mutant_site_bundle():
 
 print(f"官网 = {SITE}\n引擎(原始) = 127.0.0.1:{ENGINE_PORT}\n网关 = 127.0.0.1:{GATEWAY_PORT}\n"
       f"密钥 = 已提供（长度 {len(KEY)}，不在输出里回显）\n")
+if not IS_REPO_ROOT:
+    # 副本跑的后果：④ 会杀掉线上依赖，⑤/atexit 会用**副本里的脚本**把它拉起来 —— 线上 18001 上就换成了
+    # 副本进程（实测：留下孤儿副本、真网关被替换，且命令行里看不出是谁）。所以先在动任何东西之前喊出来。
+    print("⚠️⚠️⚠️  本脚本不是从仓库根跑的（ROOT 下没有 .git）：")
+    print(f"       ROOT = {ROOT}")
+    print(f"       ④⑤ 若需要重启 18001/18000，用到的会是**副本路径**：")
+    print(f"           {os.path.abspath(os.path.join(GATEWAY_CWD, 'server.py'))}")
+    print(f"           {os.path.abspath(os.path.join(os.path.abspath(ENGINE_CWD), 'run_server.py'))}")
+    print("       ⇒ 线上服务会被**副本进程**顶替（身份/代码版本不等价），且「恢复」只是新进程，不是还原原进程。")
+    print("       要跑真仓库，请用仓库根的 scripts/verify-health.py。\n")
 
 # ── ① 轻量档 ───────────────────────────────────────────────────────────
 t0 = time.time()
@@ -1175,8 +1337,13 @@ else:
 
 # ── ⑦ 环境变量边界：回落 / 夹下限 / **夹上界**，三种分支都不得变成忙循环 ──
 # 阈值按分支收紧（原版只有 'abc' 一例且阈值 8，注释自称应 ≤2）：
-#   回落（abc / 0 / 空串）→ 3s 内 ≤1 次（只有启动那一次）；夹下限（50→1000ms）→ 3s 内约 3~6 次；
+#   回落（abc / 0 / 空串）→ 3s 内 ≤1 次（启动那一次在窗口开始前就打完了）；夹下限（50→1000ms）→ 6s 内 ~6 次；
 #   夹上限（2³² → 2³¹−1）→ 3s 内 ≤1 次。**并且必须在 stderr 看到被拒的原始值**（静默夹紧 = 运维查不出）。
+# ⚠️ 夹下限那条的下限**必须留足余量**：实测（同一台机、同一探针间隔，用脚本自己的 start_temp_site_ready
+#    起站点）节奏是「每 ~2.0s 命中 2 次」，3s 窗口只数得到 2 次 —— 原阈值恰好 == 实测下限，余量为 0，
+#    机器一抖就变假红（复核方三次实测 2/3/3）。所以夹下限用 **6s 窗口 + 下限 3 次**：6 次实测 6s 窗口
+#    hits=[6,5,5,5,5,5]（min=5），下限 3 留出 **2 次余量**（= 一整个探测节奏）。
+#    分辨力不受影响：回落到 60s 时 6s 窗口内是 **0** 次（0 < 3，红），回绕成 1ms 时是上千次（> 14，红）。
 print("\n⑦ 环境变量边界：回落 / 夹下限 / 夹上限，且都必须把被拒的原始值打进 stderr")
 if not NODE_EXE:
     fails.append("找不到 node 可执行文件，无法做 env 边界回归")
@@ -1184,14 +1351,16 @@ else:
     srv = thread = None
     try:
         srv, thread, dep_state, dep_port = start_fake_dep()
+        # (值, 分支, 观察窗口秒, 窗口内 hits 下限, 上限, 必需告警文本)
+        # 窗口按分支取：回落/上界分支不需要长窗口（它们要证的是「≤1 次」），夹下限要留余量（见上面的实测）。
         cases = [
-            ("abc", "fallback", 1, None),
-            ("0", "fallback", 1, None),
-            ("", "fallback", 1, None),
-            ("50", "clamp_low", 8, "低于下限"),
-            ("4294967296", "clamp_high", 1, "超过上限"),
+            ("abc", "fallback", 3.0, None, 1, None),
+            ("0", "fallback", 3.0, None, 1, None),
+            ("", "fallback", 3.0, None, 1, None),
+            ("50", "clamp_low", 6.0, 3, 14, "低于下限"),
+            ("4294967296", "clamp_high", 3.0, None, 1, "超过上限"),
         ]
-        for value, kind, max_hits, expect_warn in cases:
+        for value, kind, window_s, min_hits, max_hits, expect_warn in cases:
             proc = None
             try:
                 proc, site_port, err_path = start_temp_site_ready({
@@ -1200,17 +1369,17 @@ else:
                 if not proc:
                     continue
                 dep_state["hits"] = 0
-                time.sleep(3)
+                time.sleep(window_s)
                 hits = dep_state["hits"]
                 err_text = read_err(err_path)
                 shown = json.dumps(value)
-                print(f"   HEALTH_PROBE_MS={shown:<14}（{kind}）3 秒内假依赖收到 {hits} 次 /health")
+                print(f"   HEALTH_PROBE_MS={shown:<14}（{kind}）{window_s:.0f} 秒内假依赖收到 {hits} 次 /health")
                 if hits > max_hits:
-                    fails.append(f"HEALTH_PROBE_MS={shown}（{kind}）让探针变成了忙循环：3 秒 {hits} 次"
+                    fails.append(f"HEALTH_PROBE_MS={shown}（{kind}）让探针变成了忙循环：{window_s:.0f} 秒 {hits} 次"
                                  f"（应 ≤{max_hits}）—— 会把引擎 IP 限流额度吃光，客户测算会吃 429")
-                if kind == "clamp_low" and hits < 2:
-                    fails.append(f"HEALTH_PROBE_MS={shown} 应夹到下限 1000ms（3 秒该有 3~6 次探针），"
-                                 f"实际只探了 {hits} 次 —— 夹下限没生效")
+                if min_hits is not None and hits < min_hits:
+                    fails.append(f"HEALTH_PROBE_MS={shown} 应夹到下限 1000ms（{window_s:.0f} 秒该有 ~{window_s:.0f} 次探针；"
+                                 f"下限 {min_hits} 已比实测下限低 2 次，不是 0 余量），实际只探了 {hits} 次 —— 夹下限没生效")
                 if f'环境变量 HEALTH_PROBE_MS={shown}' not in err_text:
                     fails.append(f"HEALTH_PROBE_MS={shown}（{kind}）被拒/被夹时**没有**在 stderr 打出被拒的"
                                  f"原始值（运维看不出自己的值没生效）")
@@ -1314,6 +1483,16 @@ else:
 # ── 收尾 ───────────────────────────────────────────────────────────────
 restore_all()      # 幂等：只补回「原本在跑、现在掉了」的端口（正常路径下是空操作）
 print()
+print("（说明：本脚本的「恢复」= 用 start_port 拉起的**新进程**，不是把原进程还原回来 —— "
+      "PID / CommandLine / 进程内状态都会变；上面各步打印的新进程 CommandLine 就是核身份的凭据。）")
+for _p in (ENGINE_PORT, GATEWAY_PORT):
+    if ports_argv_before.get(_p):
+        _pid_now = pid_on(_p)
+        _n, _cl = proc_info(_pid_now) if _pid_now else ("", "")
+        _same = _pid_now is not None and _pid_now == ports_pid_before.get(_p)
+        print(f"   {_p}：原进程 = {ports_argv_before[_p][:160]}")
+        print(f"   {_p}：现进程 = PID {_pid_now} · {_cl[:160]}"
+              f"{'（同一个进程·未被替换）' if _same else '（不是原进程 → 「恢复」是新进程，不是还原）'}")
 if MEASURED_INTERVAL_S is not None:
     print(f"（实测探针间隔 {MEASURED_INTERVAL_S:.1f}s → 等待预算 {WAIT_BUDGET_S:.1f}s）")
 print("全部通过 ✅" if not fails else "存在问题：\n  - " + "\n  - ".join(fails))

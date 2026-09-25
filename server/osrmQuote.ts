@@ -127,6 +127,9 @@ const MAX_TIMER_MS = 2_147_483_647;
  * ⚠️ 上界这一支不是洁癖：`OSRM_PROBE_TIMEOUT_MS=4294967296`（2³²）会让 abort 定时器**立刻**触发，
  * 活引擎被误报 `{ok:false, ms:13, reason:'timeout'}`——运维会去追一个不存在的引擎故障。
  * 被拒的原始值要打进日志，否则运维永远看不出自己写的值没生效。
+ * **覆盖方式**：仓库内唯一的调用方 `server.ts` 传的是 `positiveEnvMs('HEALTH_*')`（自己已经夹过上下限），
+ * 所以这一支在仓库内**不可达**——它由 `scripts/verify-engine-probe.ts` 里**直调** `probeEngine(2³²)` 的
+ * 用例钉住（断言夹到 2147483647 + 有告警），别把这个用例删了，否则上界回归就没人管了。
  */
 function normalizeProbeBudget(timeoutMs: number, fallback = 3_000): number {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return fallback;
@@ -143,11 +146,12 @@ function normalizeProbeBudget(timeoutMs: number, fallback = 3_000): number {
  * 注意：引擎在 Render 免费层会休眠，探测超时要显式小于官网业务超时（40s）。
  */
 export async function probeEngine(timeoutMs = 3_000): Promise<{ ok: boolean; ms: number; reason?: string }> {
-  // 预算归一：调用方常写 Number(process.env.OSRM_PROBE_TIMEOUT_MS)，未配置即 NaN，
-  // 而 NaN/0/负数/Infinity 传给 setTimeout 会变成「立刻 abort」或「永不 abort」——
-  // 前者让健康检查把活引擎误报成 timeout。非有限正值一律回落到默认 3s。
+  // 预算归一：非有限正值（NaN/0/负数/Infinity）传给 setTimeout 会变成「立刻 abort」或「永不 abort」，
+  // 前者让健康检查把活引擎误报成 timeout → 一律回落到默认 3s。
   // **上界同理必须夹**：超 2³¹−1 的延迟被 Node 定时器按 32 位有符号回绕成极小值，
   // 于是「永不超时」变成「立刻超时」，活引擎被误报 `{ok:false, ms:13, reason:'timeout'}`（假告警）。
+  // （注：仓库内的调用方 server.ts 传的是 positiveEnvMs 归一后的值，所以这条上界分支要靠
+  //  scripts/verify-engine-probe.ts 的直调用例才覆盖得到 —— 这就是那条用例存在的理由。）
   const budget = normalizeProbeBudget(timeoutMs);
   const base = engineBase();
   if (!base) return { ok: false, ms: 0, reason: 'not_configured' };

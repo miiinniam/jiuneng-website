@@ -352,18 +352,60 @@ git commit -m "feat(health): /api/health 如实反映引擎状态（后台探针
 
 ### T2 第二轮复核后追加要求（2026-09-25 独立代码复核：产品侧 7 项已落地，补下列缺口）
 
-8. **env 归一必须夹上界（产品侧，P0）**：`positiveEnvMs` 只夹下限不夹上界 → `HEALTH_PROBE_MS=4294967296`(2³²) 被 Node 定时器**回绕成 1ms** → 3 秒上千次探针（复核方 1639 次/3s、用户方 399 次/3s）且**静默无 warn**；同类 `HEALTH_DEEP_TIMEOUT_MS`/`HEALTH_PROBE_TIMEOUT_MS=2³²` 会把**活引擎误报 `{ok:false, ms:13, reason:'timeout'}`**（假告警）。修法：`> 2³¹−1` → 夹到 `2147483647` + `console.warn`（文本含被拒原始值）；**两侧都改**——`server.ts` 的 `positiveEnvMs` 与 `server/osrmQuote.ts` 的 `probeEngine` 预算归一（`normalizeProbeBudget`）。
+8. **env 归一必须夹上界（产品侧，P0）**：`positiveEnvMs` 只夹下限不夹上界 → `HEALTH_PROBE_MS=4294967296`(2³²) 被 Node 定时器**静默改成 1ms** → 3 秒上千次探针（复核方 1639 次/3s、用户方 399 次/3s）且**产品侧一条告警都没有**（⚠️ 措辞更正：Node 自己会打 `TimeoutOverflowWarning: ... Timeout duration was set to 1.`，但那是运行时泛化警告，日志里**看不出是哪个 env 的哪个值**被改成了 1ms，运维照样查不出自己写错了 —— 真问题是「产品侧无告警 + 值被静默改成 1ms」，不是「没有任何警告」）；同类 `HEALTH_DEEP_TIMEOUT_MS`/`HEALTH_PROBE_TIMEOUT_MS=2³²` 会把**活引擎误报 `{ok:false, ms:13, reason:'timeout'}`**（假告警）。修法：`> 2³¹−1` → 夹到 `2147483647` + `console.warn`（文本含被拒原始值）；**两侧都改**——`server.ts` 的 `positiveEnvMs` 与 `server/osrmQuote.ts` 的 `probeEngine` 预算归一（`normalizeProbeBudget`）。
 9. **`verify-health.py` 的假红/假绿面（P0/P1）**：
    - **假红：等待预算不得写死**（原 `WAIT_BUDGET_S = env or 20`）：默认配置站点间隔 60s，依赖死后要 ~60s 才 degraded → 必然假红。改为**先实测间隔**（采样两次 `lastProbe.at` 求差，必要时先等一次变化）→ `budget = max(2×interval, 5.0)`；`HEALTH_PROBE_WAIT` 保留为显式覆盖；**新验收：默认 60s 间隔的站点必须全绿**；
    - **假绿①**：`kill_port` 端口无监听时静默返回 → ④/⑤ 整段跳过却仍可打「全部通过」→ 改为 `fails.append`；
    - **假绿②**：①B 把「连不上（HTTP 0）」当通过（只判 `==401`）→ HTTP 0 与 5xx 都 fail，只接受非 401 的 2xx/4xx；
    - **挂死风险**：所有子进程调用（curl / netstat / powershell）必须带 Python 级 `timeout` + `TimeoutExpired` 记 fail（任一挂住 → 脚本永不退出 → 已被 ④ 杀掉的依赖等不到 finally/atexit 恢复）；
    - **选端口竞态**：临时站点 `free_port()`（bind(0)→close）被抢就起不来 → 起不来换端口重试 ≥2 次；
-   - **断言强度**：`at` 由「`at >= time`」（把 at 写成请求时刻+1ms 也能过）改为**可控延迟假依赖（800ms）断言 `at - time >= 400ms`**；`reason` 补 `timeout` 支（黑洞依赖）+ 三种 base 写法等价；warn 由「零断言」改为断言 stderr 出现 `环境变量 <NAME>="<被拒原值>"`（含上界分支）；env 边界由单例 `'abc'` 扩为 `['abc','0','','50','4294967296']` 逐个断言并收紧阈值（回落/上界 3s ≤1 次；夹下限 3s 约 3~6 次）。
+   - **断言强度**：`at` 由「`at >= time`」（把 at 写成请求时刻+1ms 也能过）改为**可控延迟假依赖（800ms）断言 `at - time >= 400ms`**；`reason` 补 `timeout` 支（黑洞依赖）+ 三种 base 写法等价；warn 由「零断言」改为断言 stderr 出现 `环境变量 <NAME>="<被拒原值>"`（含上界分支）；env 边界由单例 `'abc'` 扩为 `['abc','0','','50','4294967296']` 逐个断言。**阈值后来按实测余量修正（第三轮）**：回落/上界分支 3s ≤1 次；夹下限分支改用 **6s 窗口 + ≥3 次**（改后实测 6 次 `hits=[6,5,5,5,5,5]`，min=5 ⇒ 留 2 次余量）—— 原「3s / ≥2 次」的实测下限恰好 == 阈值（三次实测 2/3/3），余量为 0 ⇒ 机器一抖就假红。
 10. **入库回归（把只在对话里成立的证据写进脚本，P1）**：① deep **单飞 vs TTL 缓存**（弱实现加 2s TTL 能全绿通过）→ 30 个真并发断言 hits 增量 ==1 且 `at` 集合大小 ==1，**紧接着立即单发断言 hits 再 +1**（成对，缺一不可）；② **tick 抛错不得带走进程** → 在 **dist 副本**注入必抛错，断言 stderr 失败日志 ≥2 条且间隔 ≥0.5×探针间隔（分得清「tick 干脆不跑了」）+ 进程存活 + `/api/health` 200 + deep 异常分支 `ms` 为**实测耗时**。
 11. **杀进程身份门（P1）**：`EXPECT_CMDLINE[18001]=("server.py",)` 太弱（`python -m http.server` 不匹配，但任何同名脚本都能骗过）→ 改为**三层**：命令行含**绝对路径片段**（`deploy/osrm-engine`、`GATEWAY_CWD`，脚本自己的 `start_port` 就是这么起的）直接放行；只有**弱标识**（cwd 启动时命令行只剩 `server.py`）时必须过**端口自证**（`GET /gateway/health` 回出 `gateway: "jiuneng-osrm-gateway"` 指纹）；两者都不满足 → **拒杀并记失败**。低优：deep 异常分支 `ms` 用实测耗时、日志区分「内部异常」与「依赖不可达」（`reason` 保留 `unreachable`，不改封闭枚举）。
-12. **变异自证（每条都要成对：注入 → 红，还原 → 绿）**：① deep 改 2s TTL 缓存 → ②B 红；② 去掉上界夹紧 → ⑦ 上界断言红（实测 1449~1639 次/3s 忙循环）；③ `kill_port` 无监听改回静默 → ③/④ 不再记 fail、脚本打「全部通过」= 假绿复现。
+12. **变异自证（每条都要成对：注入 → 红，还原 → 绿）**：① deep 改 2s TTL 缓存 → ②B 红；② 去掉上界夹紧 → ⑦ 上界断言红（实测 1449~1639 次/3s 的失控探针；⚠️ 措辞更正：说「忙循环」不准确 —— 不是进程空转，而是**探针被 1ms 定时器打成千次/3s**，且**产品侧无告警**，Node 只有 `TimeoutOverflowWarning ... set to 1.` 这种看不出 env 名的运行时警告）；③ `kill_port` 无监听改回静默 → ③/④ 不再记 fail、脚本打「全部通过」= 假绿复现；④ 去掉 `normalizeProbeBudget` 的上界夹紧 → `scripts/verify-engine-probe.ts` 的**直调**用例红（活引擎被误报 timeout + 无「超过上限」告警）。
 13. **环境坑（本机实测，别踩）**：Windows 的 `SO_REUSEADDR` 允许**两个网关同时 bind 18001**，杀其中一个会让另一个的 netstat 视图错乱（看起来"端口没了"实际还在服务）→ 反复重启网关会攒出重复监听者，杀进程实验会变得不可复现。验收前先确认 18001 **只有一个** LISTENING PID。另：**`dist/*.cjs` 里 grep 中文一律为 0**（esbuild 默认 `charset=ascii`，中文被转义成**大写**十六进制 `\u8D85...`），所以"改动是否进了构建产物"不能靠 `grep 中文`判断 —— 要么 grep ASCII 常量（如 `2147483647` / `MAX_TIMER_MS` / 函数名），要么直接看**行为断言**（实测已在这里踩过一次假阴性）。
+
+---
+
+### T2 第三轮复核后追加要求（2026-09-25 第三方只读复核：4 条 fail_item 全真闭环，另修下列假红/挂死/换进程面）
+
+14. **`HEALTH_PROBE_WAIT` 必须拒非有限值（P0，挂死面）**：原实现 `max(float(x), 0.0)` 不滤 `nan/inf` → `deadline = time.time() + nan` → `time.time() >= deadline` **恒为 False** → 在 ④「依赖已杀、站点又始终不降级」这条**失败路径**上脚本永不退出，而恢复逻辑只在 `atexit`/Ctrl-C 里跑 ⇒ 被杀的依赖永久留在杀掉状态（实测：真脚本 + `HEALTH_PROBE_WAIT=nan` / `inf`，45s 内不退出，只能硬杀）。另两张脸同样没有一句报错：非数字被**静默**换成写死的 `20.0`（正是本轮从 `measure_wait_budget` 删掉的值）、`0`/`-5` 被静默夹成 `0.0`（每个等待预算立刻到期 ⇒ ④⑤ 必然假红）。修法：**只接受有限正值**；非法值 → 记 fail + 明确报错 + **立刻以 2 退出**（在任何破坏性操作之前，退出码 2 表示「参数/环境非法」而非断言失败）；并且所有 deadline 计算前再过一道有限性兜底（`finite_budget`，将来新增入口也漏不进来）。
+15. **⑦ 夹下限余量（P1，假红源）**：原断言是「3s 窗口 `hits >= 2`」，而夹下限后的 `interval=1000ms` → 余量恰好一个 tick。实测（脚本自己的 `start_temp_site_ready` + 计数假依赖，10 次）3s 窗口 `hits = [2,2,2,2,2,2,2,3,2,2]`（**min == 阈值**），节奏实测是「每 ~2.0s 命中 2 次」（8s 窗口 7~8 次）。修法：夹下限分支改 **6s 窗口 + 下限 3 次 + 上限 14 次**；改后同法实测 6 次 `hits = [6,5,5,5,5,5]`（min=5）⇒ 下限 3 留出 **2 次余量**（一整个探测节奏）。分辨力不变：回落到 60s 时 6s 窗口内是 **0** 次（0 < 3，红），回绕成 1ms 时是上千次（> 14，红）。
+16. **从副本跑会替换线上网关（P1，换进程面）**：`start_port` 用脚本自身 `ROOT` 重启依赖 ⇒ 从副本跑就是拿副本的 `deploy/osrm-engine/server.py` 顶替线上 18001（实测留下孤儿副本、真网关被替），而输出里**没有任何提示**；命令行缺绝对路径时更是核不出身份。修法：① `start_port` 用 `os.path.abspath` 强制**绝对路径**并打印新进程 `CommandLine`；② `ROOT` 下没有 `.git`（= 跑副本）时在**动任何东西之前**大声告警，点名「我在用副本路径 X 重启线上端口 Y」；③ 报告如实说明 **「恢复」= 新进程**（收尾打印原/现进程 CommandLine 对比，`restore_all` 也一并说明）。
+17. **`normalizeProbeBudget` 上界分支零覆盖（P2）**：仓库内唯一调用方 `server.ts` 传的是 `positiveEnvMs` 归一后的值 ⇒ `osrmQuote.ts` 里 `> 2³¹−1` 那一支在仓库内**不可达**（env 边界由 `server.ts` 自己夹）。修法：① `scripts/verify-engine-probe.ts` 增**直调**用例（`probeEngine(2³²)` → 断言活引擎仍 `ok=true` + `console.warn` 含被拒原值与「超过上限」），并配一条**反向用例**（合法 5000ms 不得有任何告警，否则「有 warn 就算过」会被别处的告警蒙混）；② 删掉 `osrmQuote.ts` 里「调用方常写 `Number(process.env.OSRM_PROBE_TIMEOUT_MS)`」这句 —— 那个 env 在仓库里**根本不存在**，注释改为说明「该分支靠直调用例覆盖」，免得后人以为有 env 入口。
+18. **假依赖端口必须避开动态端口范围（P2，假红源）**：本机 `netsh int ipv4 show dynamicport tcp` = 起始 1024、13977 个（→ **1024–15000**），而临时站点（node）的**出站连接也从这一段取源端口**。从副本跑时实测撞过一次：假依赖 bind 到 **4190**，站点侧对它一律 ECONNREFUSED → `reason='unreachable'`，并且 ⑦ 的「预算写 2³² 时活依赖被误报成不可达」跟着红两条 —— 看起来像产品缺陷，其实只是本机端口撞车。修法：`start_fake_dep` / `start_blackhole_dep` 改用 `dynamic_safe_port()`（在 16000–32000 里取一个**此刻真能 bind** 的端口，并排除 18000/18001/18123 等长驻端口）；一个都拿不到时记 fail 并退回 OS 自选（而不是静默）。
+
+#### 运维配方（本机长驻三服务：站点侧真正依赖的 env 一个都不能少）
+
+站点侧**不止** `OSRM_API_BASE`。缺下面任何一个，症状都与「配置无关的地方」长得一样，运维会查错方向：
+
+| 服务 | env | 缺了会怎样（实测/代码依据） |
+|---|---|---|
+| 引擎 `127.0.0.1:18000` | — | AIOSRM++ 裸引擎（`run_server.py`），不带密钥 |
+| 网关 `127.0.0.1:18001` | `ENGINE_API_KEY` | 未配置**拒绝启动**（`deploy/osrm-engine/server.py` 自己的硬约束） |
+| 站点 `127.0.0.1:3300` | `OSRM_API_BASE=http://127.0.0.1:18001` | `engine.configured=false`、`lastProbe.reason='not_configured'` |
+| 站点 `127.0.0.1:3300` | **`OSRM_ENGINE_KEY=<与 ENGINE_API_KEY 同值>`** | `/health` 照样 200 + `ok=true`，而**客户侧测算全 401**（假绿，规格 §4.1 的已知取舍）→ 验收脚本的 `①B 密钥门禁` 就是钉这条的 |
+| 站点 `127.0.0.1:3300` | **`HEALTH_PROBE_MS=5000`** | 不设 = 后台探针间隔 **60s** ⇒ 依赖死后轻量档要 ~60s 才 degraded。脚本能实测间隔自适应（不会假红），但**本机配方统一设 5000**（实测 `lastProbe.at` 间隔 = 5.002s），验证才快且可预期 |
+| 站点 `127.0.0.1:3300` | `HEALTH_DEEP_TIMEOUT_MS`(3000) / `HEALTH_PROBE_TIMEOUT_MS`(5000) | 有默认值；**写 2³² 会被夹到 2³¹−1 并告警**（写超上限会把活引擎误报 timeout） |
+| 验收脚本 | `ENGINE_API_KEY`（或 `OSRM_ENGINE_KEY`） | **必填**，无默认值：不给就快速失败（给默认密钥会让「密钥不一致」变假绿） |
+| 验收脚本 | `HEALTH_PROBE_WAIT` | 显式覆盖等待预算；**只接受有限正值**（nan/inf/0/负数/非数字 → 记 fail + 退出 2，见第 14 条） |
+| 验收脚本 | `HEALTH_PROBE_MEASURE_CAP`(75) / `ENGINE_PY` / `ENGINE_CWD` | 采样上限 / 本机引擎运行时路径覆盖 |
+
+```bash
+# 1) 引擎 18000（PATH 里的 python 没 fastapi，必须用 AIOSRM++ 的 venv）
+powershell -NoProfile -Command "Start-Process -FilePath 'D:/01_业务/立三方/AIOSRM++/.venv-build/Scripts/python.exe' -ArgumentList 'run_server.py','--port','18000' -WorkingDirectory 'D:/01_业务/立三方/AIOSRM++/backend' -WindowStyle Hidden"
+# 2) 网关 18001（绝对路径启动 → CommandLine 可直接核身份）
+powershell -NoProfile -Command "\$env:PORT='18001'; \$env:ENGINE_API_KEY='test-key-abc123'; Start-Process -FilePath 'D:/01_业务/立三方/AIOSRM++/.venv-build/Scripts/python.exe' -ArgumentList '<仓库绝对路径>/deploy/osrm-engine/server.py' -WindowStyle Hidden"
+# 3) 站点 3300（HEALTH_PROBE_MS 与 OSRM_ENGINE_KEY 见上表）
+powershell -NoProfile -Command "\$env:NODE_ENV='production'; \$env:PORT='3300'; \$env:OSRM_API_BASE='http://127.0.0.1:18001'; \$env:OSRM_ENGINE_KEY='test-key-abc123'; \$env:HEALTH_PROBE_MS='5000'; Start-Process -FilePath 'node' -ArgumentList 'dist/server.cjs' -WorkingDirectory '<仓库绝对路径>' -WindowStyle Hidden"
+# 核验：每个端口**只有 1 行** LISTENING；再跑验收（约 60s，脚本自己会杀/恢复网关）
+netstat -ano | grep LISTENING | grep -cE ':(18000|18001|3300) '
+ENGINE_API_KEY=test-key-abc123 python scripts/verify-health.py
+```
+
+⚠️ 两个真踩过的坑：
+- **命令行里必须是绝对路径**。以 cwd 方式启动（`python server.py`）时 Windows 的 `CommandLine` 里只剩 `server.py`，身份核验只能退到「弱标识 + 端口自证」；`start_port` 现在用 `abspath` 强制绝对路径，就是为了让 `CommandLine` 能直接认人。
+- **别从副本跑验收脚本**：④⑤ 会**杀掉线上网关、再用脚本自己 ROOT 下的路径拉起来** —— 从副本跑等于用副本的 `deploy/osrm-engine/server.py` 顶替线上 18001，而「恢复」只是**新进程**（PID/命令行/进程内状态都变），不是还原原进程。脚本现在会在动任何东西之前把这件事打出来（`IS_REPO_ROOT` + 副本路径点名），但别拿它做这种实验。
 
 ---
 
