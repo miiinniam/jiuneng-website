@@ -939,3 +939,39 @@ git commit -m "docs: 引擎体检/守护/健康检查用法增补"
 - 不做 CI 门禁（后续切片）
 - 不在云上跑本机守护（交给 Render 平台重启）
 - 不给客户暴露任何新端点或内部字段
+
+---
+
+## 上线门槛（用户 2026-09-25 指令：**开发 + 检查全部完成之后**，配置到官网与服务器）
+
+**目标只有一个：`https://site.jiuneng.space`。**
+⚠️ 根域 `jiuneng.space` 与 `www.jiuneng.space` 指向 Vercel 上的 OSRM++ 报价工具，**两个都不许动**（代码里 canonical / og:url / sitemap / robots / JSON-LD 已统一指向 site 子域，勿改回）。
+
+### 放行条件（全绿才部署）
+
+1. 完成定义 1–7 全绿
+2. T2 / T3 / T4 每个任务都过了「实现 → 审查 → 修复 → 复核」闭环（严格串行，T2/T3 都要杀引擎）
+3. `npm run lint` 0 错误；`dist/` 存在且含 `index.html`
+4. 本机三服务（3300 / 18001 / 18000）验完一轮全绿，且 `18001` 的 `LISTENING` 行数为 1
+
+### 必须**用户面板**做的两件事（我做不了）
+
+- **GoDaddy**：加 CNAME `site` → `jiuneng-website.onrender.com`
+  （现状 `site.jiuneng.space` 权威 NS 返回 NXDOMAIN，DNS 无记录）
+- **Render**：创建引擎服务 `jiuneng-osrm-engine`（`render.yaml` 已声明，含 `healthCheckPath: /health`）
+  并在站点服务 Environment 里确认：`NODE_ENV=production`、`GEMINI_API_KEY`、`OSRM_API_BASE`、`OSRM_ENGINE_KEY`（必须与引擎的 `ENGINE_API_KEY` 一致）
+  ⚠️ 站点服务的 healthCheckPath **保持默认 `/`**，**不要**指到 `/api/health`——轻量档永远 200 正是为了不让 Render 把「降级但可用」判成不健康而反复重启
+
+### 拿到授权后我做的
+
+1. `git push` 触发 Render 自动部署（**不自动 push：等用户明确点头**）
+2. 按序验：
+   - `curl https://site.jiuneng.space/api/health` → `configured:true` + `lastProbe.ok:true`
+   - `python scripts/probe-quote-api.py` 打生产域名跑**真实测算**（健康 ok ≠ 密钥正确，必须另测测算）
+   - `python scripts/verify-agent-page.py` 六档视口复跑（/ai 页无回归）
+3. 记录「生产 vs 本机」同线路复算对比，写入同日期 audit 文档
+4. 提醒用户配 UptimeRobot 每 5 分钟 ping `/api/health` 保活（免费层 15 分钟无请求会休眠）
+
+### 红线复述
+
+绝不打包 `resources/company_seal.png` / `company_sign.png`；绝不暴露引擎地址、`breakdown`/成本/利润字段；对客口径仍是「初步测算，非正式报价」。
