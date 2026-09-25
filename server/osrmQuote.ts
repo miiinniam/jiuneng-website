@@ -124,12 +124,16 @@ function engineRoot(): string {
  * 注意：引擎在 Render 免费层会休眠，探测超时要显式小于官网业务超时（40s）。
  */
 export async function probeEngine(timeoutMs = 3_000): Promise<{ ok: boolean; ms: number; reason?: string }> {
+  // 预算归一：调用方常写 Number(process.env.OSRM_PROBE_TIMEOUT_MS)，未配置即 NaN，
+  // 而 NaN/0/负数/Infinity 传给 setTimeout 会变成「立刻 abort」或「永不 abort」——
+  // 前者让健康检查把活引擎误报成 timeout。非有限正值一律回落到默认 3s。
+  const budget = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 3_000;
   const base = engineBase();
   if (!base) return { ok: false, ms: 0, reason: 'not_configured' };
 
   const started = Date.now();
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const timer = setTimeout(() => ctrl.abort(), budget);
   try {
     const res = await fetch(`${engineRoot()}/health`, {
       signal: ctrl.signal,
