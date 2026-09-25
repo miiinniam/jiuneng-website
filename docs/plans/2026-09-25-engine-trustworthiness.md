@@ -966,8 +966,8 @@ git commit -m "docs: 引擎体检/守护/健康检查用法增补"
 
 ## 完成定义（A 切片）
 
-1. `npx tsx scripts/verify-engine-probe.ts` → 三分支正确
-2. `python scripts/verify-health.py` → 全绿（含杀引擎 → degraded → 自动恢复）
+1. ✅ **已完成（2026-09-25）** `npx tsx scripts/verify-engine-probe.ts` → 三分支正确；已补上界直调用例 + 反向用例（`8d47ce3`），变异自证：去掉夹紧 → 红（活引擎被误报 timeout），还原 → 绿。
+2. ✅ **已完成（2026-09-25）** `python scripts/verify-health.py` → 全绿（含杀引擎 → degraded → 自动恢复；含默认 60s 间隔站点全绿）。**三重审查闭环**：T2 双评审（规格符合 PASS + 代码质量 REQUEST_CHANGES）→ 修复子 agent → 助手亲跑 → 只读复核子 agent **REQUEST_CHANGES**（4 条 fail_item + 9 条新发现）→ 修复子 agent（`096a3cb`/`c243e6e`/`98b8431`）→ 助手亲跑 + 独立复现 + 只读复核子 agent **APPROVE**（4 条 fail_item 全部真闭环）→ D 组非阻塞项修复（`8d47ce3`）。提交历史：`2f49858` `f250f40` `096a3cb` `c243e6e` `98b8431` `8d47ce3`。
 3. `python scripts/verify-stack.py` → 全绿（含杀引擎 → 60s 内自恢复 → 测算可用）
 4. `python scripts/verify-engine-audit.py` → 全绿（含死端口必须非 0 退出）
 5. 生产 vs 本机同线路复算有书面对比（或明确标注"前置未完成，未执行"）
