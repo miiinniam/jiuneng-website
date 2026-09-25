@@ -9,7 +9,11 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "assets:scan": "node scripts/scan-agent-assets.mjs",
+    "sync:engine": "node scripts/sync-engine.mjs",
+    "verify:agent": "python scripts/verify-agent-page.py",
+    "verify:health": "python scripts/verify-health.py"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
