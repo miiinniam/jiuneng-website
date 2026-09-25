@@ -13,7 +13,8 @@
     "assets:scan": "node scripts/scan-agent-assets.mjs",
     "sync:engine": "node scripts/sync-engine.mjs",
     "verify:agent": "python scripts/verify-agent-page.py",
-    "verify:health": "python scripts/verify-health.py"
+    "verify:health": "python scripts/verify-health.py",
+    "stack": "node scripts/serve-stack.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
