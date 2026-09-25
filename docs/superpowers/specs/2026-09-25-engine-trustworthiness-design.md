@@ -120,6 +120,14 @@ flowchart LR
 - 验证：用**生产地址**复算南宁→河内 20t 拼车，与本机结果逐项对比（里程 / 行驶时长 / 车数 / 区间下上限 / `profile_honored`），差异必须能解释（例如汇率缓存时间不同、路网数据版本不同）；对比记录写入同日期的 audit 文档
 - 冷启动：免费层休眠，首次请求 15–30s（官网超时已设 40s）；把生产 `/health` 加入保活
 
+**前置就绪度实测（2026-09-25 16:20，外部只读探测）**
+
+| 项 | 实测 | 结论 |
+|---|---|---|
+| 官网 Render 服务 | `https://jiuneng-website.onrender.com/api/health` → **200**（冷启动 22.8s，二次请求 0.35s），响应仍是旧形状 `{status,time}` | 服务活着；新健康检查未部署（预期，尚未 push） |
+| 引擎服务 | `https://jiuneng-osrm-engine.onrender.com/` → **404 + `x-render-routing: no-server`** | **引擎服务尚未创建**（T5 前置未就绪） |
+| 官网正式域名 | `site.jiuneng.space` → **NXDOMAIN**；权威 NS `ns37/ns38.domaincontrol.com` 直接回 Non-existent domain；`www` 与根域正常解析（指 Vercel） | **GoDaddy 上的 `site` CNAME 记录不存在**——A3 的对比必须暂用 `jiuneng-website.onrender.com`；且 canonical/og:url/sitemap 现均指向一个解析不了的域名，属业务级待办（须在 GoDaddy 面板补 `site` → `jiuneng-website.onrender.com`） |
+
 ### 3.4 A4 / A5（业务方决策，非本方实现）
 
 - A4：业务方对照 A1 的表标注参数真伪；如需导入真实成交价，提供原始数据，本方**仅做格式整理**为 `rates/template.csv` 形态，**不替代业务方编造数值**
