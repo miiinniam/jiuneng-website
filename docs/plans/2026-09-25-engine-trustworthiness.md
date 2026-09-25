@@ -350,6 +350,21 @@ git commit -m "feat(health): /api/health 如实反映引擎状态（后台探针
 6. **反向自证（缺一不可）**：① 用**错的**密钥跑脚本必须**快速失败**、不得打印"全部通过"；② 把 `probeEngine` 临时替换为必抛错版本 → 站点**存活**且日志出现 tick 失败 → 还原后 `git diff` 为空。
 7. **已知取舍要写进文档**（不是缺陷）：因 `/health` 免鉴权 + 探测不发密钥，**密钥错时 `/health` 仍 ok** —— 「健康 ok」不等于「密钥正确」，排查必须另测真实测算；探针与业务**共用引擎 IP 限流额度**（实测失控时客户测算直接吃 429）。
 
+### T2 第二轮复核后追加要求（2026-09-25 独立代码复核：产品侧 7 项已落地，补下列缺口）
+
+8. **env 归一必须夹上界（产品侧，P0）**：`positiveEnvMs` 只夹下限不夹上界 → `HEALTH_PROBE_MS=4294967296`(2³²) 被 Node 定时器**回绕成 1ms** → 3 秒上千次探针（复核方 1639 次/3s、用户方 399 次/3s）且**静默无 warn**；同类 `HEALTH_DEEP_TIMEOUT_MS`/`HEALTH_PROBE_TIMEOUT_MS=2³²` 会把**活引擎误报 `{ok:false, ms:13, reason:'timeout'}`**（假告警）。修法：`> 2³¹−1` → 夹到 `2147483647` + `console.warn`（文本含被拒原始值）；**两侧都改**——`server.ts` 的 `positiveEnvMs` 与 `server/osrmQuote.ts` 的 `probeEngine` 预算归一（`normalizeProbeBudget`）。
+9. **`verify-health.py` 的假红/假绿面（P0/P1）**：
+   - **假红：等待预算不得写死**（原 `WAIT_BUDGET_S = env or 20`）：默认配置站点间隔 60s，依赖死后要 ~60s 才 degraded → 必然假红。改为**先实测间隔**（采样两次 `lastProbe.at` 求差，必要时先等一次变化）→ `budget = max(2×interval, 5.0)`；`HEALTH_PROBE_WAIT` 保留为显式覆盖；**新验收：默认 60s 间隔的站点必须全绿**；
+   - **假绿①**：`kill_port` 端口无监听时静默返回 → ④/⑤ 整段跳过却仍可打「全部通过」→ 改为 `fails.append`；
+   - **假绿②**：①B 把「连不上（HTTP 0）」当通过（只判 `==401`）→ HTTP 0 与 5xx 都 fail，只接受非 401 的 2xx/4xx；
+   - **挂死风险**：所有子进程调用（curl / netstat / powershell）必须带 Python 级 `timeout` + `TimeoutExpired` 记 fail（任一挂住 → 脚本永不退出 → 已被 ④ 杀掉的依赖等不到 finally/atexit 恢复）；
+   - **选端口竞态**：临时站点 `free_port()`（bind(0)→close）被抢就起不来 → 起不来换端口重试 ≥2 次；
+   - **断言强度**：`at` 由「`at >= time`」（把 at 写成请求时刻+1ms 也能过）改为**可控延迟假依赖（800ms）断言 `at - time >= 400ms`**；`reason` 补 `timeout` 支（黑洞依赖）+ 三种 base 写法等价；warn 由「零断言」改为断言 stderr 出现 `环境变量 <NAME>="<被拒原值>"`（含上界分支）；env 边界由单例 `'abc'` 扩为 `['abc','0','','50','4294967296']` 逐个断言并收紧阈值（回落/上界 3s ≤1 次；夹下限 3s 约 3~6 次）。
+10. **入库回归（把只在对话里成立的证据写进脚本，P1）**：① deep **单飞 vs TTL 缓存**（弱实现加 2s TTL 能全绿通过）→ 30 个真并发断言 hits 增量 ==1 且 `at` 集合大小 ==1，**紧接着立即单发断言 hits 再 +1**（成对，缺一不可）；② **tick 抛错不得带走进程** → 在 **dist 副本**注入必抛错，断言 stderr 失败日志 ≥2 条且间隔 ≥0.5×探针间隔（分得清「tick 干脆不跑了」）+ 进程存活 + `/api/health` 200 + deep 异常分支 `ms` 为**实测耗时**。
+11. **杀进程身份门（P1）**：`EXPECT_CMDLINE[18001]=("server.py",)` 太弱（`python -m http.server` 不匹配，但任何同名脚本都能骗过）→ 改为**三层**：命令行含**绝对路径片段**（`deploy/osrm-engine`、`GATEWAY_CWD`，脚本自己的 `start_port` 就是这么起的）直接放行；只有**弱标识**（cwd 启动时命令行只剩 `server.py`）时必须过**端口自证**（`GET /gateway/health` 回出 `gateway: "jiuneng-osrm-gateway"` 指纹）；两者都不满足 → **拒杀并记失败**。低优：deep 异常分支 `ms` 用实测耗时、日志区分「内部异常」与「依赖不可达」（`reason` 保留 `unreachable`，不改封闭枚举）。
+12. **变异自证（每条都要成对：注入 → 红，还原 → 绿）**：① deep 改 2s TTL 缓存 → ②B 红；② 去掉上界夹紧 → ⑦ 上界断言红（实测 1449~1639 次/3s 忙循环）；③ `kill_port` 无监听改回静默 → ③/④ 不再记 fail、脚本打「全部通过」= 假绿复现。
+13. **环境坑（本机实测，别踩）**：Windows 的 `SO_REUSEADDR` 允许**两个网关同时 bind 18001**，杀其中一个会让另一个的 netstat 视图错乱（看起来"端口没了"实际还在服务）→ 反复重启网关会攒出重复监听者，杀进程实验会变得不可复现。验收前先确认 18001 **只有一个** LISTENING PID。另：**`dist/*.cjs` 里 grep 中文一律为 0**（esbuild 默认 `charset=ascii`，中文被转义成**大写**十六进制 `\u8D85...`），所以"改动是否进了构建产物"不能靠 `grep 中文`判断 —— 要么 grep ASCII 常量（如 `2147483647` / `MAX_TIMER_MS` / 函数名），要么直接看**行为断言**（实测已在这里踩过一次假阴性）。
+
 ---
 
 ## Task 3: `npm run stack` —— 三服务守护（本机崩溃自恢复）
