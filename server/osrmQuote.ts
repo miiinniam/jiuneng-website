@@ -119,6 +119,25 @@ function engineRoot(): string {
   return engineBase().replace(/\/api\/v1$/, '');
 }
 
+/** Node 定时器延迟按 32 位有符号存储：超过它就回绕成极小值（「永不超时」变「立刻超时」）。 */
+const MAX_TIMER_MS = 2_147_483_647;
+
+/**
+ * 探测预算归一：非有限值 / ≤0 → 回落默认；> 2³¹−1 → 夹到上限。
+ * ⚠️ 上界这一支不是洁癖：`OSRM_PROBE_TIMEOUT_MS=4294967296`（2³²）会让 abort 定时器**立刻**触发，
+ * 活引擎被误报 `{ok:false, ms:13, reason:'timeout'}`——运维会去追一个不存在的引擎故障。
+ * 被拒的原始值要打进日志，否则运维永远看不出自己写的值没生效。
+ */
+function normalizeProbeBudget(timeoutMs: number, fallback = 3_000): number {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return fallback;
+  if (timeoutMs > MAX_TIMER_MS) {
+    console.warn(`[engine] 探测预算 ${JSON.stringify(timeoutMs)}ms 超过上限 ${MAX_TIMER_MS}ms`
+      + `（Node 定时器会回绕成极小值 → 活引擎被误报 timeout），夹紧到 ${MAX_TIMER_MS}ms`);
+    return MAX_TIMER_MS;
+  }
+  return timeoutMs;
+}
+
 /**
  * 轻量探测引擎是否可达。给健康检查复用，**不抛异常**，只回结果。
  * 注意：引擎在 Render 免费层会休眠，探测超时要显式小于官网业务超时（40s）。
@@ -127,7 +146,9 @@ export async function probeEngine(timeoutMs = 3_000): Promise<{ ok: boolean; ms:
   // 预算归一：调用方常写 Number(process.env.OSRM_PROBE_TIMEOUT_MS)，未配置即 NaN，
   // 而 NaN/0/负数/Infinity 传给 setTimeout 会变成「立刻 abort」或「永不 abort」——
   // 前者让健康检查把活引擎误报成 timeout。非有限正值一律回落到默认 3s。
-  const budget = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 3_000;
+  // **上界同理必须夹**：超 2³¹−1 的延迟被 Node 定时器按 32 位有符号回绕成极小值，
+  // 于是「永不超时」变成「立刻超时」，活引擎被误报 `{ok:false, ms:13, reason:'timeout'}`（假告警）。
+  const budget = normalizeProbeBudget(timeoutMs);
   const base = engineBase();
   if (!base) return { ok: false, ms: 0, reason: 'not_configured' };
 

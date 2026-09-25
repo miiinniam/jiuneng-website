@@ -49,9 +49,15 @@ function getGeminiClient(): GoogleGenAI {
 // 轻量模式必须永远快、永远 200（UptimeRobot 保活依赖它）；深探测只在 ?deep=1 时实时打引擎。
 // 环境变量：HEALTH_PROBE_MS（后台探查间隔，默认 60s）、HEALTH_DEEP_TIMEOUT_MS（deep 预算，默认 3s）、
 //          HEALTH_PROBE_TIMEOUT_MS（后台探查预算，默认 5s）。
-// ⚠️ 取数必须归一 + 夹下限：`Number('abc')`/`Number('')` 分别得到 NaN/0，直接喂给 setInterval 会退化成
+// ⚠️ 取数必须归一 + 夹下限 + **夹上界**：`Number('abc')`/`Number('')` 分别得到 NaN/0，直接喂给 setInterval 会退化成
 //    1ms 忙循环——实测 3 秒内把引擎打了 1600+ 次，把引擎自带的 IP 限流额度吃光，**客户点「快速测算」就会吃 429**。
 //    所以：非有限值或 ≤0 → 回落默认；再按下限夹紧（间隔最低 1s，预算最低 200ms）。
+// ⚠️ **上界同样必须夹**：`setTimeout`/`setInterval` 的延迟参数在 Node 里按 32 位有符号整数存储，
+//    超过 2³¹−1 会**回绕成很小的正数**（实测 `HEALTH_PROBE_MS=4294967296`（2³²）→ 回绕成 1ms，
+//    3 秒上千次探针，两方独立复现 1639 次/3s 与 399 次/3s；`HEALTH_PROBE_TIMEOUT_MS=2³²` 则让**活引擎
+//    被误报成 `{ok:false, ms:13, reason:'timeout'}` 的假告警**）。原来只夹下限，这类值会**静默**变成忙循环，
+//    正是 T2 要防的「吃光引擎限流额度」。
+const MAX_TIMER_MS = 2_147_483_647;                        // 2³¹−1：Node 定时器延迟的 32 位有符号上界
 function positiveEnvMs(name: string, fallback: number, min: number): number {
   const rawStr = process.env[name];
   if (rawStr === undefined) return fallback;                 // 未配置：用默认值，不必告警
@@ -64,6 +70,12 @@ function positiveEnvMs(name: string, fallback: number, min: number): number {
   if (raw < min) {
     console.warn(`[health] 环境变量 ${name}=${JSON.stringify(rawStr)} 低于下限，夹紧到 ${min}ms`);
     return min;
+  }
+  if (raw > MAX_TIMER_MS) {
+    // 不静默夹紧：回绕成 1ms 的后果是「静默忙循环」，运维必须能从日志看出自己的值被拒了
+    console.warn(`[health] 环境变量 ${name}=${JSON.stringify(rawStr)} 超过上限 ${MAX_TIMER_MS}ms`
+      + `（超过会被 Node 定时器回绕成极小值，实测退化成千次/3s 忙循环），夹紧到 ${MAX_TIMER_MS}ms`);
+    return MAX_TIMER_MS;
   }
   return raw;
 }
@@ -143,13 +155,18 @@ app.get('/api/health', async (req: Request, res: Response) => {
 
   if (req.query.deep === '1') {
     let probe: LastProbe;
+    const deepStarted = Date.now();
     try {
       const r = await deepProbe();
       probe = { ok: r.ok, at: r.at, ms: r.ms, ...(r.reason ? { reason: r.reason } : {}) };
     } catch (e) {
       // 与后台 tick 同一类风险：express 4 不接管 async 处理器的 rejection，未捕获即进程级致命
-      console.error('[health] deep 探测失败：', e);
-      probe = { ok: false, at: new Date().toISOString(), ms: 0, reason: 'unreachable' };
+      // ms 用**实测耗时**（原先硬编码 0）：0ms 在语义上是「未测量」（not_configured 专用），
+      // 拿它当「探测失败耗时」会让运维误以为这条路径根本没发请求。
+      // reason 仍留 'unreachable'（spec §4.1 的 reason 是封闭枚举，不轻易新增取值），
+      // 但日志文本明确区分「探测内部异常」与「依赖连不上」——否则代码 bug 会被伪装成依赖不可达。
+      console.error('[health] deep 探测内部异常（不是「依赖不可达」，请查代码/运行时）：', e);
+      probe = { ok: false, at: new Date().toISOString(), ms: Date.now() - deepStarted, reason: 'unreachable' };
     }
     res.json({
       status: snap.configured && probe.ok === false ? 'degraded' : 'ok',
