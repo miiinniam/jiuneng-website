@@ -131,11 +131,23 @@ flowchart LR
 |---|---|---|
 | `GET /api/health` | 扩展 | `{status: "ok"\|"degraded", time, engine: {configured: bool, base: string\|null, lastProbe: {ok: bool, at: string\|null, ms: number\|null, reason?: string}}}` |
 | `GET /api/health?deep=1` | 新增 | 同上，但 `engine.lastProbe` 为本次实时结果，超时 3s |
-| `server/osrmQuote.ts` | 导出 | `probeEngine(timeoutMs): Promise<{ok: boolean, ms: number, reason?: string}>` —— 与 `runQuote` **同模块**，复用既有的 `engineBase()` 与超时处理（`engineBase` 保持模块私有，不对外导出，避免出现第二套引擎地址解析） |
+| `server/osrmQuote.ts` | 导出 | `probeEngine(timeoutMs = 3000): Promise<{ok: boolean, ms: number, reason?: string}>` —— 与 `runQuote` **同模块**，复用既有的 `engineBase()` 与超时处理（`engineBase` 保持模块私有，不对外导出，避免出现第二套引擎地址解析） |
 | `npm run engine:audit` | 新增 | 退出码 0 = 全部关键字段齐备；非 0 = 有缺项（详见 stdout） |
 | `npm run stack` | 新增 | 守护三服务；全部进程到达最大重启次数仍失败 → 非 0 退出 |
 
 **对客出参白名单不变**：`/api/osrm-quote` 返回字段集合不变，不因本切片新增任何内部字段。
+
+### 4.1 probeEngine 契约细则（评审后补定，实现与验收脚本据此钉住）
+
+| 项 | 规定 |
+|---|---|
+| `timeoutMs` | 默认 `3000`；**必须做预算归一**：非有限值或 ≤0（`0` / 负数 / `NaN` / `Infinity`）一律回落到默认值。理由：调用方会写 `Number(process.env.X)`，未配置即 `NaN`，若不归一会退化成"立刻超时"并输出**假的 `timeout`**，使运维去追一个不存在的引擎故障。**极小正值按原值使用**：`0.5` 不回落，实测引擎 ~4–30ms 回包故判 `timeout`——这是语义正确而非缺陷（`0` / `NaN` / 负数与 `0.5` 是两种不同情况，别混为一谈） |
+| `reason` 取值（封闭枚举） | `not_configured`（未配 `OSRM_API_BASE`）· `timeout`（连接上但预算内无响应）· `unreachable`（连不上：拒绝/DNS/TLS，且非法 URL 也归此类，不抛异常）· `status_<HTTP码>`（可达但非 2xx，如 `status_401`、`status_404`） |
+| `ms` 语义 | 实际等待毫秒；**`not_configured` 时为 `0`，含义是"未测量"而非"0 毫秒"**；`timeout` 时允许略大于预算（定时器精度） |
+| 探测目标 | 打 `OSRM_API_BASE` 所指向服务的**根路径 `/health`**（不是 `/api/v1/health`）。本机配置的 base 是网关 `18001`，因此"探测引擎"实际是"探测网关及其背后的引擎" |
+| **不变式** | **`/health` 必须保持免鉴权**。若未来给 `/health` 加鉴权，探测会以 `status_401` 把健康服务误报为 `degraded`；网关的 `KEY_FREE` 集合（`GET /health`、`GET /gateway/health`）是这条不变式的落点 |
+| 不发密钥 | 探测**不发送** `X-API-Key`（与上面的免鉴权不变式配套）；失败时**不回传** `error.message`（含完整 URL），不打印任何 URL，避免探测自身成为信息泄漏点 |
+| 覆盖要求 | 验收脚本必须覆盖四支中至少三支（`unreachable` / `not_configured` / `timeout`）+ 三种 base 写法（根地址 / 根地址带尾斜杠 / 完整 `.../api/v1`）等价性；断言必须**钉住具体 reason 取值**（仅断言"有 reason"会放过分类反转，已由变异实验证实） |
 
 ## 5. 错误处理
 
@@ -154,11 +166,11 @@ flowchart LR
 |---|---|---|
 | 1 | `npm run engine:audit` 在本机真引擎跑通并产出两表 | 实跑；检查 md 含全部区块、json 可解析 |
 | 2 | 缺字段即失败 | 临时指向一个只实现部分端点的地址（或用未放行的网关端口），确认非 0 退出 |
-| 3 | 健康检查不谎报 | 杀掉引擎 → `?deep=1` 返回 `degraded` + reason；轻量模式 200 且 `lastProbe.ok=false` |
+| 3 | 健康检查不谎报 | 杀掉引擎 → `?deep=1` 返回 `degraded` + reason；轻量模式 200 且 `lastProbe.ok=false`。**必须用真实 base 口径验证**（经 3300 官网 → 网关 18001 → 引擎），不得只在直连 18000 的场景下通过——否则代理层自带假 `/health` 时会漏掉误报 |
 | 4 | 守护自动恢复 | `npm run stack` 下 kill 引擎 → 观察自动重启 → 测算接口重新可用 |
 | 5 | 端口占用前置检查 | 手动占用 3300 → `npm run stack` 明确报出占用 PID 而非静默失败 |
 | 6 | 生产 vs 本机复算 | 同一请求两侧各跑一次，差异有书面解释 |
-| 7 | 对客零泄漏不回退 | 复跑既有 `probe-quote-api.py`（区间算法 + 内部字段零泄漏）保持全绿 |
+| 7 | 对客零泄漏不回退 | 复跑 `scripts/probe-quote-api.py`（区间算法 + 内部字段零泄漏）保持全绿。**注**：该脚本原先只存在于临时目录、未入库，已随 T1 修复并入 `scripts/`（这是本验收项可执行的前提） |
 | 8 | 全页回归不受影响 | `verify-agent-page.py` 390/1440 退出码 0 |
 
 ## 7. 风险与缓解
