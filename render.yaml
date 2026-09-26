@@ -1,11 +1,18 @@
-# Render 声明式部署配置 —— 玖能官网 v0.4(免费层 Node 服务)
+# Render 声明式部署配置 —— 玖能官网 v0.4(免费层 Node + Python 服务)
 
 # 用法:
 #   1. 把本项目推送到 GitHub 仓库(如 github.com/miiinniam/jiuneng-website)
 #   2. Render Dashboard → New → Blueprint → 选择该仓库
-#   3. Render 自动读取本文件创建服务
-#   4. 创建完成后,在 Render 服务 Settings → Environment 手动填入 GEMINI_API_KEY
-#      (sync: false 表示密钥不会从仓库同步,必须在面板填)
+#   3. Render 读取本文件创建**两个**服务:
+#        jiuneng-website      —— 官网(Node,含 /ai 页、AI 询价接口、测算接口)
+#        jiuneng-osrm-engine  —— 测算引擎(OSRM++ 窄暴露入口)
+#   4. 密钥全部自动化,版本库和任何人都不需要经手密钥值:
+#        ENGINE_API_KEY    : generateValue=true → Render 生成 256 位随机值
+#        OSRM_ENGINE_KEY   : fromService        → 自动引用上面那把钥匙(两侧永远一致)
+#        GEMINI_API_KEY    : sync=false         → 唯一人工项,首次创建时面板会提示填写
+#   5. ⚠️ 改本文件**不会**自动新建服务(免费层 Blueprint 未开推送同步):
+#      必须进 Render Dashboard → Blueprint → **Sync** 才会应用。
+#      详见 docs/plans/2026-09-25-engine-trustworthiness.md「上线门槛」。
 
 services:
   - type: web
@@ -19,14 +26,17 @@ services:
       - key: NODE_ENV
         value: production
       - key: GEMINI_API_KEY
-        sync: false  # 在 Render 面板手动填写,勿提交到仓库
+        sync: false  # 唯一人工项:Google AI Studio 的 key,勿提交到仓库
       - key: APP_URL
-        sync: false  # 可选:站点公网地址,上线后可在面板填 https://<service>.onrender.com
+        value: https://site.jiuneng.space  # 站点公网地址(自引用链接用)
       - key: OSRM_API_BASE
-        sync: false  # 测算引擎地址,填引擎服务的公网地址(如 https://jiuneng-osrm-engine.onrender.com)
-                     # 填根地址即可(官网侧自动补 /api/v1);想写全 https://host/api/v1 也支持
+        value: https://jiuneng-osrm-engine.onrender.com
+        # 必须带协议头:官网侧只补 /api/v1、不补 https://(只写主机名会静默失败)
       - key: OSRM_ENGINE_KEY
-        sync: false  # 与引擎服务的 ENGINE_API_KEY 填同一个值(官网以 X-API-Key 头发出)
+        fromService:           # 自动引用引擎侧的钥匙 —— 不需要人工对齐两侧
+          type: web
+          name: jiuneng-osrm-engine
+          envVarKey: ENGINE_API_KEY
 
   # ── 测算引擎(OSRM++ 的窄暴露入口) ──────────────────────────────
   # 只放行 GET /health 与 POST /api/v1/route/cost,其余端点一律 404;
@@ -44,10 +54,10 @@ services:
     healthCheckPath: /health
     envVars:
       - key: ENGINE_API_KEY
-        sync: false  # 必填:在 Render 面板生成一串随机值,与官网侧 OSRM_ENGINE_KEY 保持一致
+        generateValue: true   # Render 生成 256 位随机值;站点侧 OSRM_ENGINE_KEY 自动引用
       - key: ENGINE_RATE_LIMIT
         value: "60"  # 每 IP 每分钟最大请求数
       - key: PYTHON_VERSION
-        value: "3.11.9"
+        value: "3.11.9"  # 全限定版本(Render 要求);本地引擎实测解释器 3.11.15,同大版本
       - key: OSRM_RESOURCE_DIR
         value: /opt/render/project/src/deploy/osrm-engine  # 数据目录(可写,重启后回到仓库版本)
