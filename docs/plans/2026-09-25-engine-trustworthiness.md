@@ -1012,7 +1012,25 @@ git commit -m "docs: 引擎体检/守护/健康检查用法增补"
 
 ### 部署进展（2026-09-26 执行）
 
-**已完成**（助手操作，均有验证）：
+**已完成 —— Render 侧全部落地（助手在 Render 面板操作，Blueprints 实例 `exs-darqvq7avr4c73fr3vl0`）**：
+
+| 项 | 结果 |
+|---|---|
+| Blueprint 实例 | 「New Blueprint → 选仓库 → **Associate existing services**」→ 接管既有站点（**未另建同名服务**）并执行 7 条动作：建 `jiuneng-osrm-engine`、关联 `jiuneng-website`、写入 `APP_URL`/`OSRM_API_BASE`/`OSRM_ENGINE_KEY` |
+| 引擎服务 | `https://jiuneng-osrm-engine.onrender.com/health` → **200 `{"status":"ok"}`**（首轮 404 是启动中） |
+| 站点健康 | `?deep=1` → `configured:true`、`lastProbe.ok:true`、**ms=52** ✓ |
+| **生产测算** | `probe-quote-api.py --site https://jiuneng-website.onrender.com` → **全部通过 ✅**：整车 上海→河内 13m → 2243 km/29.9h/1 车/区间 69,700,000–85,100,000；拼车 深圳→河内 8t/25m³ → 1028.5 km/9,300,000–11,300,000；三种错误分支 reason 全对 —— **与本机基线逐位一致** |
+| 线上网关门禁 | 白名单外 `/api/v1/rates/current`、`/api/v1/vehicle/models`、`/docs` **全 404** ✓；GET 打 `route/cost` 亦 404（方法级白名单）✓ |
+| ⚠️ 踩坑（已修） | 首次同步后站点测算 **401**：`fromService` 引用的值**只在同步时更新**（Render 官方口径），而本次同步里引擎密钥是**同时**生成的 → 站点抓到生成前的值。**解法：Blueprint → Manual sync 再同步一次**（引擎密钥已存在后引用即正确）。**记入运维：新建引擎服务后必须再同步一次** |
+| 密钥零经手 | `ENGINE_API_KEY` 由 Render `generateValue` 生成、站点侧由 `fromService` 引用 —— 全程无人（含助手）看到密钥值 |
+
+**未完成（需业务方面板操作）**：
+
+1. **GoDaddy**：CNAME `site` → `jiuneng-website.onrender.com`（根域/www 禁动）
+2. （建议）UptimeRobot 每 5 分钟 ping `https://site.jiuneng.space/api/health` 保活
+3. ⚠️ **免费层配额**：站点侧 60s 周期探针会把引擎也一直唤醒 → 两个常驻服务按 Render「免费层每工作区 750 实例小时/月」口径会超额（详见渲染文档），需业务方决定：放引擎自然休眠 / 接受月中被暂停 / 升级付费
+
+**已由助手完成的历史步骤（存档）**：代码入库（`37459a0`/`5484781`/`902b152`/`44ee232`）→ Render 自动部署 → `/ai` 生产复跑 EXIT=0 → 引擎部署件入库（**只带已公开的 4 份数据**，未公开的 `price_versions`/`calibration_samples`/`demand_periods` 进 `.gitignore` + `sync-engine.mjs` 排除表；实测去掉那三份后引擎仍能起 + 真算）→ `render.yaml` 密钥全自动化（`generateValue` + `fromService`，官方 schema 离线校验通过）
 
 | 项 | 结果 |
 |---|---|
