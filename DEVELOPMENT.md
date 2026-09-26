@@ -583,10 +583,63 @@ document.documentElement.scrollWidth === document.documentElement.clientWidth   
 ### 10.3 健康检查
 
 ```
-GET /api/health  →  {"status":"ok","time":"2026-09-19T04:56:08.467Z"}
+GET /api/health  →  {"status":"ok","time":"...","engine":{"configured":true,"base":"127.0.0.1:18001","lastProbe":{"ok":true,"at":"...","ms":5}}}
 ```
 
-用于保活 ping 和监控。
+轻量档**永远 HTTP 200**（保活 ping / 监控 / Render 健康检查都靠它），引擎状态只是随附的「上一次探针结果」。
+两种模式与全部字段见 §10.4。
+
+### 10.4 引擎可信度运维（A 切片，2026-09）
+
+> A 切片 = 「引擎可信度」：引擎不可达时如实降级、本机三服务崩溃自恢复、引擎参数体检成表。
+> 设计与计划见 [`docs/superpowers/specs/2026-09-25-engine-trustworthiness-design.md`](docs/superpowers/specs/2026-09-25-engine-trustworthiness-design.md)、[`docs/plans/2026-09-25-engine-trustworthiness.md`](docs/plans/2026-09-25-engine-trustworthiness.md)。
+
+**`npm run engine:audit` —— 引擎参数只读体检**
+
+```bash
+OSRM_API_BASE=http://127.0.0.1:18000 npm run engine:audit
+```
+
+- 产出人读表 `docs/engine-audit/<日期>-engine-audit.md` + 机读 `engine-params.json`（费率 / 汇率 / 油价 / 口岸费用 / 税率口径对照 五区块，每个数字带 `source`＝端点＋字段路径）。
+- **引擎不可达 → 非 0 退出**，绝不产出半空的表当成功；失败路径**零副作用**（不覆盖上次产物）。
+- ⚠️ **产物含内部成本参数**（售价因子 / 油价 / 汇率 / 口岸费用 / 税率）。仓库是 **public**，故 `docs/engine-audit/` 已在 `.gitignore` 里排除，**产物只落本地、绝不入库**；对客只能露售价。
+- 未校准 / 未启用 / 默认值会**显式标注**（如费率样本 0 条、`price_factor.active=false`、油价 `manual_default`），不静默留空。
+
+**`npm run stack` —— 本机三服务守护**
+
+```bash
+ENGINE_API_KEY=<key> npm run stack     # 引擎 18000 + 网关 18001 + 官网 3300
+```
+
+- 退避重启 `1/2/4/8/16s`，每服务独立计数、上限 5 次（`STACK_MAX_RESTARTS` 可覆盖）；**超限 → 停掉全部子进程 + 打印「哪个服务 / 几次 / 日志路径」+ 退出码 1**。
+- 启动前做**端口占用前置检查**：数 `LISTENING` **行数**（不是「端口在不在」——Windows 允许同端口多 listener），被占则报出占用 PID 并退出 3。
+- 退出码：`0` 正常 / `1` 重启超限 / `2` 参数非法 / `3` 端口被占。缺 `ENGINE_API_KEY` **拒绝启动**（否则网关起不来或密钥不一致 → `/health` 绿而客户测算全 401）。
+- **只管本机**；云上由 Render 平台负责重启。
+
+**`/api/health` 两种模式**
+
+| 模式 | 行为 | 用途 |
+|---|---|---|
+| `GET /api/health`（轻量） | **永远 200** + 上次探针结果 `engine{configured,base,lastProbe{ok,at,ms}}`；首探之前 `ok:null` | 保活 / 监控 / **Render 健康检查的安全前提**（依赖挂了也不让平台把站点判死） |
+| `GET /api/health?deep=1` | 实时探一次引擎，3s 超时，**单飞且无 TTL 缓存** | 排查「到底通不通」 |
+
+- 未配置引擎（无 `OSRM_API_BASE`/`OSRM_ENGINE_KEY`）→ `configured:false` / `reason:'not_configured'`，**不算 degraded**，HTTP 仍 200；依赖不可达 → `lastProbe.ok=false` + `reason='unreachable'|'timeout'`。
+- 站点侧 env：`OSRM_API_BASE`、`OSRM_ENGINE_KEY`（**必须与网关的 `ENGINE_API_KEY` 一致**，不一致时客户测算 401 而 `/health` 仍是绿的）、`HEALTH_PROBE_MS`（默认 60000，本机调试常设 5000）、`HEALTH_PROBE_TIMEOUT_MS`、`HEALTH_DEEP_TIMEOUT_MS`。
+- env 数值一律做有限性/正性校验 + 上界夹到 `2147483647`（Node `setTimeout` 超过 2³¹−1 会**静默**回绕成 1ms）、下限各自不同（`HEALTH_PROBE_MS` 为 1000ms）；非法值 warn（附被拒原值）并回落默认，**不静默**。
+
+**验收脚本跑法（全部在 `scripts/`）**
+
+```bash
+ENGINE_API_KEY=<key> python scripts/verify-health.py     # 健康检查全链路（会杀/重启依赖；必须从仓库根跑）
+python scripts/verify-stack.py                           # 三服务守护（会杀三服务 → 自恢复）
+python scripts/verify-engine-audit.py                    # 体检导出（死端口必须非 0 退出）
+python scripts/probe-quote-api.py                        # 测算区间 + 内部字段零泄漏
+npx tsx scripts/verify-engine-probe.ts                   # probeEngine 四分支（含上界直调用例）
+uv run --with websockets python scripts/verify-agent-page.py --url http://127.0.0.1:3300/ai   # /ai 页六档视口+交互（本机 python 无 websockets）
+```
+
+- 项目 python 调用一律加 `env -u PYTHONPATH`（Hermes 的 `PYTHONPATH` 会污染解释器）。
+- 杀任何进程前先核 `CommandLine` 身份，并数端口 `LISTENING` 行数（须为 1）；PowerShell 读 `CommandLine` 前要 `[Console]::OutputEncoding=UTF8`，否则中文路径被写坏、含中文的强身份标识永不命中。
 
 ---
 
