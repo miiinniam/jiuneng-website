@@ -1010,7 +1010,29 @@ git commit -m "docs: 引擎体检/守护/健康检查用法增补"
   并在站点服务 Environment 里确认：`NODE_ENV=production`、`GEMINI_API_KEY`、`OSRM_API_BASE`、`OSRM_ENGINE_KEY`（必须与引擎的 `ENGINE_API_KEY` 一致）
   ⚠️ 站点服务的 healthCheckPath **保持默认 `/`**，**不要**指到 `/api/health`——轻量档永远 200 正是为了不让 Render 把「降级但可用」判成不健康而反复重启
 
-### 拿到授权后我做的
+### 部署进展（2026-09-26 执行）
+
+**已完成**（助手操作，均有验证）：
+
+| 项 | 结果 |
+|---|---|
+| 代码入库 | `37459a0`（/ai 页 + 新服务端 + A 切片，22 文件 +7105/−10）→ `5484781`（`deploy/osrm-engine` 引擎部署件，63 文件 +13839）；均已 push 到 `miiinniam/jiuneng-website` |
+| Render 自动部署 | push 后约 **40s** 完成；`/api/health` 已呈新形态：`{"status":"ok",...,"engine":{"configured":false,"base":null,"lastProbe":{"ok":false,"reason":"not_configured"}}}` → **新代码生效且如实降级** |
+| `/ai` 页上线 | 真被服务（`<title>JIUNENG logistics \| 物流 AI 数字员工</title>` + `assets/ai-1DIpN__Q.js` / `ai-CmtM1ich.css`），非 SPA 兜底 |
+| 生产复跑 | `verify-agent-page.py`（390/1440）**EXIT=0**：无横向溢出、`opacity:0` 内容 0、汉堡菜单可展开、标签切换、轮播 1/4→2/4、hero→表单预填；**表单 → `/api/logistics-consult` HTTP 200 `ok=True`** ⇒ 站点服务已配 `GEMINI_API_KEY`，线上 AI 询价可用；亮度 @1440 `min=73.2 [20,21,22,64]`、@390 `min=97.8 [39,87]` |
+| 引擎部署件 | 已入库并**只带已公开的 4 份数据**（`exchange_rate`/`fixed_fees`/`hs_tariff_2026`/`osrm_plus.db`）；未公开的 `price_versions`/`calibration_samples`/`demand_periods` 已进 `.gitignore` + `sync-engine.mjs` 排除表（暂存门禁验证：0 个敏感文件、0 个 `__pycache__`）。实测去掉那三份后引擎仍能起 + 真算（2243.0265 km / 77,400,453 VND，与基线逐位一致） |
+
+**未完成（需业务方面板操作）**：
+
+1. **Render**：Blueprint → **Sync**（或 New → Web Service，repo `miiinniam/jiuneng-website`、rootDir `deploy/osrm-engine`、runtime Python、build `pip install -r requirements.txt`、start `python server.py`、healthCheckPath `/health`）→ 创建 `jiuneng-osrm-engine`
+2. **引擎服务** Environment：`ENGINE_API_KEY`＝随机串（自定，勿提交仓库）
+3. **站点服务** Environment：`OSRM_API_BASE=https://jiuneng-osrm-engine.onrender.com`、`OSRM_ENGINE_KEY`＝与上面**同一个值**（不一致时客户测算 401 而 `/health` 仍绿）、`NODE_ENV=production`（healthCheckPath 保持默认 `/`，**不要**指到 `/api/health`）
+4. **GoDaddy**：CNAME `site` → `jiuneng-website.onrender.com`（根域/www 禁动）
+5. （建议）UptimeRobot 每 5 分钟 ping `https://site.jiuneng.space/api/health` 保活（免费层 15 分钟休眠）
+
+**待业务方完成上述后由助手续做**：`probe-quote-api.py` 打生产域名跑真实测算 → 记录「生产 vs 本机」同线路复算对比 → 写入当日 audit 文档。
+
+### 拿到授权后我做的（原计划原文，保留备查）
 
 1. `git push` 触发 Render 自动部署（**不自动 push：等用户明确点头**）
 2. 按序验：
