@@ -41,6 +41,15 @@ services:
           type: web
           name: jiuneng-osrm-engine
           envVarKey: ENGINE_API_KEY
+      - key: HEALTH_PROBE_MS
+        value: "0"
+        # 0 = 关闭后台周期探查(也是代码默认值):免费层「每工作区 750 实例小时/月」,
+        # 周期探查会 24/7 把引擎叫醒 → 两个常驻服务 ≈1440h/月,月中必然被暂停全部免费服务。
+        # 引擎改由真实测算请求按需唤醒(休眠时首个测算慢 30–60s)。
+      - key: OSRM_QUOTE_TIMEOUT_MS
+        value: "75000"
+        # 冷启动等待上限(默认 75s):前端 fetch 无独立超时,这里是端到端唯一的等待上限;
+        # 给足才能「等出」休眠引擎的首次结果,而不是误报 engine_timeout。
 
   # ── 测算引擎(OSRM++ 的窄暴露入口) ──────────────────────────────
   # 只放行 GET /health 与 POST /api/v1/route/cost,其余端点一律 404;

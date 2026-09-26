@@ -11,7 +11,8 @@
  *     不得由模型或前端自行估算任何数字。
  */
 
-const TIMEOUT_MS = 40_000; // Render 免费层冷启动 15–30s，超时给足；配合健康检查保活
+// 测算调用预算见下方 quoteTimeoutMs()（默认 75s，可用 OSRM_QUOTE_TIMEOUT_MS 覆盖）。
+// ⚠️ 声明必须放在 MAX_TIMER_MS/归一函数**之后**：const 有 TDZ，前移会在模块求值期直接抛错。
 
 /* ── 起点/终点/口岸白名单（不透传任意地址，避免依赖地理编码 + 参数可控） ── */
 
@@ -142,8 +143,42 @@ function normalizeProbeBudget(timeoutMs: number, fallback = 3_000): number {
 }
 
 /**
+ * 测算调用预算（默认 75s）。
+ * 为什么给这么长：引擎改为**按需唤醒**后（站点默认不再周期探查，见 server.ts 的 HEALTH_PROBE_MS），
+ * Render 免费层实例休眠时首个请求要等冷启动（实测 30–60s）——预算太短会把「正在唤醒」误判成
+ * 「引擎超时」，客户白等还拿不到结果。前端 fetch 未设任何超时（src/agent/App.tsx 只是 await fetch），
+ * 所以这里就是端到端**唯一**的等待上限。
+ * ⚠️ 归一规则与 server.ts 一致：非有限值/≤0 → 回落默认并打印被拒原值（否则运维看不出自己的值没生效）；
+ *    低于下限夹紧；超过 2³¹−1 夹紧（否则 abort 定时器**立刻**触发 → 活引擎被误报 engine_timeout）。
+ */
+const QUOTE_TIMEOUT_DEFAULT_MS = 75_000;
+const QUOTE_TIMEOUT_MIN_MS = 1_000;
+function quoteTimeoutMs(): number {
+  const rawStr = process.env.OSRM_QUOTE_TIMEOUT_MS;
+  if (rawStr === undefined) return QUOTE_TIMEOUT_DEFAULT_MS;
+  const raw = Number(rawStr);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    console.warn(`[engine] 环境变量 OSRM_QUOTE_TIMEOUT_MS=${JSON.stringify(rawStr)} 不是有限正值，`
+      + `回落到默认 ${QUOTE_TIMEOUT_DEFAULT_MS}ms`);
+    return QUOTE_TIMEOUT_DEFAULT_MS;
+  }
+  if (raw < QUOTE_TIMEOUT_MIN_MS) {
+    console.warn(`[engine] 环境变量 OSRM_QUOTE_TIMEOUT_MS=${JSON.stringify(rawStr)} 低于下限，夹紧到 ${QUOTE_TIMEOUT_MIN_MS}ms`);
+    return QUOTE_TIMEOUT_MIN_MS;
+  }
+  if (raw > MAX_TIMER_MS) {
+    console.warn(`[engine] 环境变量 OSRM_QUOTE_TIMEOUT_MS=${JSON.stringify(rawStr)} 超过上限 ${MAX_TIMER_MS}ms`
+      + `（Node 定时器会回绕成极小值 → abort 立刻触发、活引擎被误报超时），夹紧到 ${MAX_TIMER_MS}ms`);
+    return MAX_TIMER_MS;
+  }
+  return raw;
+}
+const TIMEOUT_MS = quoteTimeoutMs();
+console.info(`[engine] 测算调用预算 ${TIMEOUT_MS}ms（冷启动等待上限；前端无独立超时）`);
+
+/**
  * 轻量探测引擎是否可达。给健康检查复用，**不抛异常**，只回结果。
- * 注意：引擎在 Render 免费层会休眠，探测超时要显式小于官网业务超时（40s）。
+ * 注意：引擎在 Render 免费层会休眠，探测超时要显式小于官网业务超时（见上 TIMEOUT_MS，默认 75s）。
  */
 export async function probeEngine(timeoutMs = 3_000): Promise<{ ok: boolean; ms: number; reason?: string }> {
   // 预算归一：非有限正值（NaN/0/负数/Infinity）传给 setTimeout 会变成「立刻 abort」或「永不 abort」，

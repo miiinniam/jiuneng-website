@@ -30,11 +30,14 @@
   ⑥ tick 抛错不得带走进程（**在 dist 副本上注入必抛错**，不动仓库源文件）：stderr 失败日志 **≥2 条**且
      两次出现的间隔 **≥ 0.5×探针间隔**（证明「启动 tick」与「setInterval tick」两条路径都在跑且都被 catch），
      同时进程存活、`/api/health` 仍 200；deep 的异常分支 ms 必须是**实测耗时**（不是硬编码 0）
-  ⑦ 环境变量边界（每个值都断言，含**上界**）：非有限/≤0 回落默认且 3s ≤1 次；过小夹到下限且 3s 约 3~6 次；
-     >2³¹−1 夹到上限且 3s ≤1 次 —— 三种分支都必须在 stderr 出现
-     `环境变量 <NAME>="<被拒原值>"`；HEALTH_DEEP_TIMEOUT_MS/HEALTH_PROBE_TIMEOUT_MS 写 2³² 时
-     活引擎**不得**被误报 timeout（假告警回归）
+  ⑦ 环境变量边界（每个值都断言，含**上界**）：**默认 0 = 关闭周期探查**（未设/空串/显式 0 → 不探且**不告警**，
+     那是新默认而非写错）；非有限值 → 回落默认 0 并告警；过小夹到下限且 6s 约 3~6 次；>2³¹−1 夹到上限且 3s ≤1 次 ——
+     后两类**必须**在 stderr 出现 `环境变量 <NAME>="<被拒原值>"`；HEALTH_DEEP_TIMEOUT_MS/
+     HEALTH_PROBE_TIMEOUT_MS 写 2³² 时活引擎**不得**被误报 timeout（假告警回归）
   ⑧ 未配置分支（不设 OSRM_API_BASE）→ reason **必须** == 'not_configured'
+  ⑨ **按需唤醒**（省 Render 免费层实例小时）：不设 HEALTH_PROBE_MS 的站点在窗口内 lastProbe.at **必须不变**、
+     假依赖只收到启动那 1 次 /health（证明引擎不会被 24/7 叫醒、免费额度不会被吃光）；
+     显式 HEALTH_PROBE_MS=4000 的站点 lastProbe.at **必须变**（证明机制仍在，本条有判别力）
 
 安全护栏（别再删）：
   - 只对「本机回环 base + 已知开发端口」做杀进程实验；远端/未知 base 一律只跑只读断言
@@ -60,9 +63,11 @@
     连接也从这一段取源端口**，撞车时站点侧得到 ECONNREFUSED → `reason='unreachable'`，表现成「产品把活依赖
     误报成不可达」的**假红**（实测撞过一次，端口 4190）。见 `dynamic_safe_port()`
 
-等待预算为什么不能写死：默认配置下（文档配方未设 HEALTH_PROBE_MS）探针间隔是 60s，依赖死后轻量档要
-**约 60s** 才变 degraded；原版写死 20s = **必然假红**。所以先实测间隔（采样 lastProbe.at 两次求差）再推
-`budget = max(2 × interval, 5.0)`；`HEALTH_PROBE_WAIT` 保留为显式覆盖。
+等待预算为什么不能写死：**本脚本的运行配方必须显式设 HEALTH_PROBE_MS** —— 站点默认已**关闭**周期探查
+（`probeIntervalMs()`，为的是不把 Render 免费层的引擎 24/7 叫醒，省 750 实例小时/月的额度）。
+配方里设 60s 时，依赖死后轻量档要**约 60s** 才变 degraded；原版写死 20s = **必然假红**。
+所以先实测间隔（采样 lastProbe.at 两次求差）再推 `budget = max(2 × interval, 5.0)`；
+`HEALTH_PROBE_WAIT` 保留为显式覆盖。
 
 覆盖值是**双刃剑**：非法的覆盖值曾经有两种坏结果 —— 非数字被**静默**换成写死的 20.0（运维以为生效了），
 nan/inf 被 max(x, 0.0) 原样放行后灌进 deadline（永不退出，被杀掉的依赖等不到 atexit 恢复）。
@@ -539,8 +544,11 @@ def parse_iso(s):
 def measure_wait_budget():
     """**实测被测站点的探针间隔**，据此推等待预算 —— 绝不写死。
 
-    默认配置（文档配方未设 HEALTH_PROBE_MS）下间隔是 60s：依赖死后轻量档要**约 60s** 才变 degraded，
-    原版写死 20s 在标准配置上**必然假红**。做法：采样两次 `lastProbe.at` 求差（必要时先等一次变化）。
+    ⚠️ 站点**默认已关闭周期探查**（见 server.ts 的 probeIntervalMs：为了不把 Render 免费层的引擎
+    24/7 叫醒，省 750 实例小时/月的额度）→ **运行配方必须显式设 HEALTH_PROBE_MS**（如 6000），
+    否则这里采样不到 at 变化，会按「探针没在跑」记失败（那是误配，不是产品缺陷）。
+    配方里设 60s 时，依赖死后轻量档要**约 60s** 才变 degraded，原版写死 20s 在那种配置上**必然假红**。
+    做法：采样两次 `lastProbe.at` 求差（必要时先等一次变化）。
     `HEALTH_PROBE_WAIT` 是显式覆盖，设了就完全按它来（并打印说明）。
     """
     global WAIT_BUDGET_S, MEASURED_INTERVAL_S
@@ -1384,14 +1392,18 @@ else:
         srv, thread, dep_state, dep_port = start_fake_dep()
         # (值, 分支, 观察窗口秒, 窗口内 hits 下限, 上限, 必需告警文本)
         # 窗口按分支取：回落/上界分支不需要长窗口（它们要证的是「≤1 次」），夹下限要留余量（见上面的实测）。
+        # (值, 分支, 观察窗口秒, 窗口内 hits 下限, 上限, 必需告警文本, 是否必须打出被拒原值)
+        # ⚠️ 2026-09-26 语义变更（配合「引擎按需休眠」）：HEALTH_PROBE_MS 默认改为 **0 = 关闭周期探查**。
+        #    于是「未设 / 空串 / 显式 0」从「非法 → 回落 60s + 告警」变成「合法 → 关闭且**不告警**」；
+        #    fallback 分支只剩「非有限值」（abc/nan）这一类 —— 那是写错，仍必须告警并打出原值。
         cases = [
-            ("abc", "fallback", 3.0, None, 1, None),
-            ("0", "fallback", 3.0, None, 1, None),
-            ("", "fallback", 3.0, None, 1, None),
-            ("50", "clamp_low", 6.0, 3, 14, "低于下限"),
-            ("4294967296", "clamp_high", 3.0, None, 1, "超过上限"),
+            ("abc", "fallback", 3.0, None, 1, "不是有限非负值", True),
+            ("0", "off", 3.0, None, 1, None, False),
+            ("", "off", 3.0, None, 1, None, False),
+            ("50", "clamp_low", 6.0, 3, 14, "低于下限", True),
+            ("4294967296", "clamp_high", 3.0, None, 1, "超过上限", True),
         ]
-        for value, kind, window_s, min_hits, max_hits, expect_warn in cases:
+        for value, kind, window_s, min_hits, max_hits, expect_warn, expect_raw in cases:
             proc = None
             try:
                 proc, site_port, err_path = start_temp_site_ready({
@@ -1411,20 +1423,35 @@ else:
                 if min_hits is not None and hits < min_hits:
                     fails.append(f"HEALTH_PROBE_MS={shown} 应夹到下限 1000ms（{window_s:.0f} 秒该有 ~{window_s:.0f} 次探针；"
                                  f"下限 {min_hits} 已比实测下限低 2 次，不是 0 余量），实际只探了 {hits} 次 —— 夹下限没生效")
-                if f'环境变量 HEALTH_PROBE_MS={shown}' not in err_text:
+                # 只有「被拒/被夹」的分支才该打出被拒原值；off 是新默认，**不该**告警
+                # （对合法默认值刷告警会把真问题淹掉——这正是「静默 vs 告警」教训的另一面）。
+                if expect_raw and f'环境变量 HEALTH_PROBE_MS={shown}' not in err_text:
                     fails.append(f"HEALTH_PROBE_MS={shown}（{kind}）被拒/被夹时**没有**在 stderr 打出被拒的"
                                  f"原始值（运维看不出自己的值没生效）")
+                if (not expect_raw) and f'环境变量 HEALTH_PROBE_MS={shown}' in err_text:
+                    fails.append(f"HEALTH_PROBE_MS={shown}（{kind}）是合法默认值，**不该**告警："
+                                 f"stderr={err_text.strip()[:200]!r}")
                 if expect_warn and expect_warn not in err_text:
                     fails.append(f"HEALTH_PROBE_MS={shown} 的告警文本里没有「{expect_warn}」："
                                  f"stderr={err_text.strip()[:200]!r}")
-                if (f'环境变量 HEALTH_PROBE_MS={shown}' in err_text
+                if kind == "off":
+                    # off 是新默认：**不该**告警（告警会给运维刷噪音、把真问题淹掉），
+                    # 而「启动日志明说已关闭」那行是 console.info → stdout，本脚本只留 stderr
+                    # （start_temp_site 把 stdout 丢 DEVNULL）→ 那条断言放在
+                    # scripts/verify-quote-timeout.py（它把 stdout 与 stderr 同写一个文件）。
+                    if '环境变量 HEALTH_PROBE_MS' in err_text:
+                        fails.append(f"HEALTH_PROBE_MS={shown}（off）是合法默认值，**不该**告警："
+                                     f"stderr={err_text.strip()[:200]!r}")
+                    else:
+                        print("   ✓ off：0 次探测（不叫醒引擎）且未告警")
+                elif (f'环境变量 HEALTH_PROBE_MS={shown}' in err_text
                         and (not expect_warn or expect_warn in err_text)):
                     print(f"   ✓ {kind}：已按规则处理，且 stderr 有告警（含被拒原值）")
                 code, body, raw = curl_json(f"http://127.0.0.1:{site_port}/api/health", 5)
                 if code != 200:
                     fails.append(f"env 边界用例 {shown}：临时站点健康检查异常 HTTP {code} {raw[:160]}")
                 elif probe_ok(body) is not True:
-                    # 回落分支的站点 60s 才探第二次，只靠「启动那一次」判 ok=true 会被环境抖动放大成假红。
+                    # off/回落分支的站点不会再有第二次后台探测，只靠「启动那一次」判 ok=true 会被环境抖动放大成假红。
                     # 兜底再证一次：deep=1 是当场实时探测（独立请求），它 ok=true 就说明探针本身没坏。
                     _c3, deep_e, raw_e = curl_json(f"http://127.0.0.1:{site_port}/api/health?deep=1", 20)
                     if probe_ok(deep_e) is not True:
@@ -1511,7 +1538,86 @@ else:
     finally:
         stop_temp_site(proc)
 
-# ── 收尾 ───────────────────────────────────────────────────────────────
+# ── ⑨ 按需唤醒：默认不周期探查（省 Render 免费层 750 实例小时/月），显式设了才探 ──
+# 为什么单列一段：这是 2026-09-26 的产品级取舍 —— 旧默认 60s 会把免费层的引擎 24/7 钉在醒着状态，
+# 两个常驻服务 ≈1440h/月 > 750h 额度，用光后当月暂停**全部**免费服务（含官网）。
+# 断言必须**双向**：只证「关了」会漏掉「机制被改坏」；只证「开着」会漏掉「默认没关」。
+print("\n⑨ 按需唤醒：默认关闭周期探查（引擎不会被 24/7 叫醒），显式设置时机制仍在")
+if not NODE_EXE:
+    fails.append("找不到 node 可执行文件，无法验证按需唤醒")
+else:
+    def lastprobe_at(body):
+        return (((body or {}).get("engine") or {}).get("lastProbe") or {}).get("at")
+
+    # ⑨A 默认（不设 HEALTH_PROBE_MS）→ 窗口内 at 必须不变、假依赖期间不许再有 /health
+    _srvA = _thA = _procA = None
+    try:
+        _srvA, _thA, _depA, _portA = start_fake_dep()
+        _procA, _siteA, _errA = start_temp_site_ready({
+            "OSRM_API_BASE": f"http://127.0.0.1:{_portA}",
+            "HEALTH_PROBE_MS": None})          # None = 不设该变量 → 走代码默认（0 = 关闭）
+        if _procA:
+            _code, _body, _raw = curl_json(f"http://127.0.0.1:{_siteA}/api/health", 5)
+            at0 = lastprobe_at(_body)
+            print(f"   ⑨A 默认配置：站点 PORT={_siteA}，启动后 lastProbe.at={at0!r}")
+            _depA["hits"] = 0
+            WINDOW_A = 12.0
+            time.sleep(WINDOW_A)
+            _code2, _body2, _raw2 = curl_json(f"http://127.0.0.1:{_siteA}/api/health", 5)
+            at1 = lastprobe_at(_body2)
+            hits_a = _depA["hits"]
+            err_a = read_err(_errA)
+            print(f"   ⑨A 等 {WINDOW_A:.0f}s 后 lastProbe.at={at1!r}，期间假依赖收到 {hits_a} 次 /health")
+            if at0 is None:
+                fails.append("⑨A 默认配置下 lastProbe.at 为 null（启动那一次探针没回包？）→ 无法证明「不再探测」")
+            elif at1 != at0:
+                fails.append(f"⑨A 默认配置下 lastProbe.at 变了（{at0!r} → {at1!r}）：周期探查没关掉，"
+                             f"引擎会被 24/7 叫醒 → Render 免费层额度仍会被吃光")
+            else:
+                print("        ✓ 默认配置下不再有后台探查（at 未变）→ 引擎可自然休眠")
+            if hits_a > 1:
+                fails.append(f"⑨A 默认配置下 {WINDOW_A:.0f}s 内假依赖被打了 {hits_a} 次 /health"
+                             f"（应 ≤1 = 仅启动那一次）")
+            else:
+                print(f"        ✓ 期间只有 {hits_a} 次 /health（仅启动自检），不再是每 60s 一条")
+            # ⚠️ 「后台周期探查 已关闭」那行是 console.info → **stdout**，而本脚本只留 stderr
+            #    （start_temp_site 把 stdout 丢给了 DEVNULL）→ 这里只能断言「**不该**对未设的默认值告警」
+            #    （告警走 stderr）；「启动日志明说已关闭」由 scripts/verify-quote-timeout.py 断言
+            #    （它把 stdout 与 stderr 同写一个文件）。
+            if '环境变量 HEALTH_PROBE_MS' in err_a:
+                fails.append(f"⑨A 未设 HEALTH_PROBE_MS 是合法默认（关闭），**不该**告警："
+                             f"{err_a.strip()[:200]!r}")
+    finally:
+        stop_temp_site(_procA)
+        stop_fake_dep(_srvA, _thA)
+
+    # ⑨B 显式 HEALTH_PROBE_MS=4000 → at 必须变（机制仍在；与 ⑨A 一起才有判别力）
+    _srvB = _thB = _procB = None
+    try:
+        _srvB, _thB, _depB, _portB = start_fake_dep()
+        _procB, _siteB, _errB = start_temp_site_ready({
+            "OSRM_API_BASE": f"http://127.0.0.1:{_portB}",
+            "HEALTH_PROBE_MS": "4000"})
+        if _procB:
+            _code, _body, _raw = curl_json(f"http://127.0.0.1:{_siteB}/api/health", 5)
+            atb0 = lastprobe_at(_body)
+            _depB["hits"] = 0
+            time.sleep(12.0)
+            _code2, _body2, _raw2 = curl_json(f"http://127.0.0.1:{_siteB}/api/health", 5)
+            atb1 = lastprobe_at(_body2)
+            hits_b = _depB["hits"]
+            print(f"   ⑨B HEALTH_PROBE_MS=4000：lastProbe.at {atb0!r} → {atb1!r}，12s 内 {hits_b} 次 /health")
+            if atb0 is None or atb1 is None or atb1 == atb0:
+                fails.append(f"⑨B 显式设 HEALTH_PROBE_MS=4000 后 lastProbe.at 没变（{atb0!r} → {atb1!r}）："
+                             f"周期探查机制被改坏了（那么 ⑨A 的「不变」就不再是证据）")
+            elif hits_b < 2:
+                fails.append(f"⑨B 显式 4000ms 时 12s 内只探了 {hits_b} 次（应 ≥2）—— 间隔没生效")
+            else:
+                print("        ✓ 显式设置时间隔照旧生效（机制未被改坏，⑨A 的「不变」有判别力）")
+    finally:
+        stop_temp_site(_procB)
+        stop_fake_dep(_srvB, _thB)
+
 restore_all()      # 幂等：只补回「原本在跑、现在掉了」的端口（正常路径下是空操作）
 print()
 print("（说明：本脚本的「恢复」= 用 start_port 拉起的**新进程**，不是把原进程还原回来 —— "

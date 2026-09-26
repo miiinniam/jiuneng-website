@@ -1030,7 +1030,22 @@ git commit -m "docs: 引擎体检/守护/健康检查用法增补"
 2. ~~Render Custom Domain~~ → **改用声明式**：`render.yaml` 站点服务加 `domains: [site.jiuneng.space]`（官方 schema 校验通过），Blueprint **Manual sync** 后生效。**`https://site.jiuneng.space/ai` → 200** ✓；TLS = **Google Trust Services WE1 / CN=site.jiuneng.space**（notAfter 2026-12-25）✓；`http://` → **301** 跳 HTTPS ✓；`/` 与 `/api/health` 均 200 ✓；**生产测算打在正式域名上：全部通过 ✅**（区间与基线逐位一致）。
    - ⚠️ 注意：Render 界面此版本 **Settings 页无 Custom Domains 区块**（全文与 110 项元素清点均无）→ 结论：**用 `render.yaml` 的 `domains` 字段声明**，别在面板里找。
 3. （建议）UptimeRobot 每 5 分钟 ping `https://site.jiuneng.space/api/health` 保活
-4. ⚠️ **免费层配额**：站点侧 60s 周期探针会把引擎也一直唤醒 → 两个常驻服务按 Render「免费层每工作区 750 实例小时/月」口径会超额（用光则当月暂停）；待业务方拍板：让引擎按需休眠（首次测算慢 30–60s）/ 升付费 / 接受月中暂停
+4. ✅ **免费层配额 → 已拍板并落地（2026-09-26，方案 a：引擎按需休眠）**
+   - 站点侧 `HEALTH_PROBE_MS` 默认改为 **0 = 关闭后台周期探查**（`server.ts` 的 `probeIntervalMs()`）：
+     旧默认 60s 会把引擎 24/7 钉在醒着状态，两个常驻服务 ≈1440 实例小时/月 > 免费额度 750h/月，
+     用光后当月会被暂停**全部**免费服务（含官网）。显式设 `HEALTH_PROBE_MS`（如本地联调 5000）行为完全照旧。
+   - 测算预算 `OSRM_QUOTE_TIMEOUT_MS` 默认 **75s**（原 `osrmQuote.ts` 硬编码 40s）：引擎休眠时首个请求要等
+     冷启动（实测 30–60s），预算太短会把「正在唤醒」误报成 engine_timeout；前端 fetch 无独立超时
+     （`src/agent/App.tsx` 只是 await），所以它是端到端**唯一**的等待上限。非法值回落 75s、<1000 夹到 1000、
+     >2³¹−1 夹到上限，全部带告警（旧坑：2³² 会让 abort 立刻触发 → 活引擎被误报超时）。
+   - **证据**（均本机真跑）：新脚本 `scripts/verify-quote-timeout.py` **EXIT=0** —— 默认预算 + 30s 延迟引擎
+     → HTTP 200 且区间/里程与生产基线**逐位一致**；3000ms→3.1s 干净超时；50ms→夹到 1000ms→1.1s 超时
+     （B/C 耗时差即判别力）；2³² 与 abc 都不误报。`scripts/verify-health.py`（⑦ 语义更新 + 新增 ⑨）**EXIT=0**
+     —— 默认配置 12s 内 `lastProbe.at` **不变**且假依赖 **0 次**探测（引擎可自然休眠）；显式 4000ms 时 at 会变
+     （机制未被改坏、⑨A 有判别力）。`npm run lint` 0、`npm run build` ✓、`verify-stack.py` ✓、
+     `probe-quote-api.py` ✓、`verify-engine-audit.py` ✓。
+   - 实例小时预估：站点 ≈744h（UptimeRobot 每 5 分钟 ping `/api/health`，**不**碰引擎）+ 引擎按需唤醒
+     （每次约 1 分钟，每次部署再 1 次）→ 落在 750h 内。
 
 **已由助手完成的历史步骤（存档）**：代码入库（`37459a0`/`5484781`/`902b152`/`44ee232`）→ Render 自动部署 → `/ai` 生产复跑 EXIT=0 → 引擎部署件入库（**只带已公开的 4 份数据**，未公开的 `price_versions`/`calibration_samples`/`demand_periods` 进 `.gitignore` + `sync-engine.mjs` 排除表；实测去掉那三份后引擎仍能起 + 真算）→ `render.yaml` 密钥全自动化（`generateValue` + `fromService`，官方 schema 离线校验通过）
 

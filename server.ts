@@ -47,8 +47,12 @@ function getGeminiClient(): GoogleGenAI {
 
 // API: Health probe —— 如实反映依赖状态。
 // 轻量模式必须永远快、永远 200（UptimeRobot 保活依赖它）；深探测只在 ?deep=1 时实时打引擎。
-// 环境变量：HEALTH_PROBE_MS（后台探查间隔，默认 60s）、HEALTH_DEEP_TIMEOUT_MS（deep 预算，默认 3s）、
-//          HEALTH_PROBE_TIMEOUT_MS（后台探查预算，默认 5s）。
+// 环境变量：HEALTH_PROBE_MS（后台探查间隔，**默认 0 = 关闭周期探查**，见 probeIntervalMs）、
+//          HEALTH_DEEP_TIMEOUT_MS（deep 预算，默认 3s）、HEALTH_PROBE_TIMEOUT_MS（后台探查预算，默认 5s）。
+// ⚠️ 为什么默认关闭：Render 免费层「每工作区 750 实例小时/月」，用光则当月暂停**全部**免费服务。
+//    周期探查（旧默认 60s）会 24/7 把引擎叫醒 → 两个常驻服务 ≈1440h/月，必然超额被暂停。
+//    改为按需唤醒后，引擎只在有真实请求（或显式 ?deep=1）时才醒，实例小时只剩站点自身。
+//    需要常驻探查的场景（本地联调、监控曲线）显式设 HEALTH_PROBE_MS=60000 即可，机制不变。
 // ⚠️ 取数必须归一 + 夹下限 + **夹上界**：`Number('abc')`/`Number('')` 分别得到 NaN/0，直接喂给 setInterval 会退化成
 //    1ms 忙循环——实测 3 秒内把引擎打了 1600+ 次，把引擎自带的 IP 限流额度吃光，**客户点「快速测算」就会吃 429**。
 //    所以：非有限值或 ≤0 → 回落默认；再按下限夹紧（间隔最低 1s，预算最低 200ms）。
@@ -80,7 +84,36 @@ function positiveEnvMs(name: string, fallback: number, min: number): number {
   return raw;
 }
 
-const PROBE_INTERVAL_MS = positiveEnvMs('HEALTH_PROBE_MS', 60_000, 1_000);
+/**
+ * 后台探查间隔（ms）：**默认 0 = 不周期探查**（按需唤醒引擎，省免费层实例小时；理由见文件头）。
+ * 语义边界必须明确：
+ *   未设 / 空串 | 显式 0 → 0（关闭，**不告警**——这是新默认，不是写错）；
+ *   非数字/负数 → 告警 + 0；>0 但低于下限 → 夹到 1000ms + 告警；> 2³¹−1 → 夹到上限 + 告警。
+ * ⚠️ 这里**不能复用** positiveEnvMs：它把 0 当非法值回落成默认值，而 0 现在是合法且默认的取值；
+ *    强行复用会让「默认关闭」变成「默认 60s」，本轮的省额度改动整套失效（且是静默失效）。
+ */
+function probeIntervalMs(): number {
+  const rawStr = process.env.HEALTH_PROBE_MS;
+  if (rawStr === undefined || rawStr.trim() === '') return 0;
+  const raw = Number(rawStr);
+  if (raw === 0) return 0;
+  if (!Number.isFinite(raw) || raw < 0) {
+    console.warn(`[health] 环境变量 HEALTH_PROBE_MS=${JSON.stringify(rawStr)} 不是有限非负值，回落到默认 0（关闭周期探查）`);
+    return 0;
+  }
+  if (raw < 1_000) {
+    console.warn(`[health] 环境变量 HEALTH_PROBE_MS=${JSON.stringify(rawStr)} 低于下限，夹紧到 1000ms`);
+    return 1_000;
+  }
+  if (raw > MAX_TIMER_MS) {
+    console.warn(`[health] 环境变量 HEALTH_PROBE_MS=${JSON.stringify(rawStr)} 超过上限 ${MAX_TIMER_MS}ms`
+      + `（超过会被 Node 定时器回绕成极小值，实测退化成千次/3s 忙循环），夹紧到 ${MAX_TIMER_MS}ms`);
+    return MAX_TIMER_MS;
+  }
+  return raw;
+}
+
+const PROBE_INTERVAL_MS = probeIntervalMs();
 const DEEP_TIMEOUT_MS = positiveEnvMs('HEALTH_DEEP_TIMEOUT_MS', 3_000, 200);
 const PROBE_TIMEOUT_MS = positiveEnvMs('HEALTH_PROBE_TIMEOUT_MS', 5_000, 200);
 
@@ -112,8 +145,18 @@ async function tickProbe(): Promise<void> {
 const tick = (): void => {
   void tickProbe().catch((e) => console.error('[health] 探针 tick 失败：', e));
 };
+/**
+ * 启动时**只**打一次：给 /api/health 一个初值（否则 lastProbe.ok=null 会一直被读成「还没探过」），
+ * 顺带让发布后立刻能看出引擎可达性。代价是每次部署唤醒引擎约 1 分钟，可忽略。
+ */
 tick();
-setInterval(tick, PROBE_INTERVAL_MS).unref?.();
+/**
+ * 周期探查**默认不启用**（PROBE_INTERVAL_MS === 0）：否则会把免费层的引擎 24/7 钉在醒着状态，
+ * 两个常驻服务 ≈1440 实例小时/月 > 免费额度 750h/月，月中会被暂停**全部**免费服务。
+ * 需要常驻探查（本地联调 / 监控曲线）时显式设 HEALTH_PROBE_MS，机制与旧版完全一致。
+ * 引擎改由真实请求按需唤醒：休眠时首个测算要等冷启动，由 OSRM_QUOTE_TIMEOUT_MS（默认 75s）兜住。
+ */
+if (PROBE_INTERVAL_MS > 0) setInterval(tick, PROBE_INTERVAL_MS).unref?.();
 
 /** 只暴露 host，绝不带路径/查询串（避免把内部路径或密钥泄给监控页面）。 */
 function engineSnapshot(): { configured: boolean; base: string | null; lastProbe: LastProbe } {
@@ -124,7 +167,10 @@ function engineSnapshot(): { configured: boolean; base: string | null; lastProbe
 }
 
 // 启动即打印一次归一后的实际参数——运维写错 env 时能立刻从日志看出（而不是靠猜频率）
-console.info(`[health] 后台探针间隔 ${PROBE_INTERVAL_MS}ms（deep 预算 ${DEEP_TIMEOUT_MS}ms / 后台预算 ${PROBE_TIMEOUT_MS}ms）；引擎 base = ${engineSnapshot().base ?? '未配置'}`);
+console.info(`[health] 后台周期探查 ${PROBE_INTERVAL_MS > 0
+  ? `${PROBE_INTERVAL_MS}ms`
+  : '已关闭（按需唤醒引擎，省免费层实例小时；需要常驻探查请设 HEALTH_PROBE_MS）'}`
+  + `（deep 预算 ${DEEP_TIMEOUT_MS}ms / 后台预算 ${PROBE_TIMEOUT_MS}ms）；引擎 base = ${engineSnapshot().base ?? '未配置'}`);
 
 type ProbeResult = { ok: boolean; ms: number; reason?: string };
 /** deep 结果 + **结果时刻**（语义：探测拿到结果的时刻，不是请求进来的时刻）。 */

@@ -14,6 +14,7 @@
     "sync:engine": "node scripts/sync-engine.mjs",
     "verify:agent": "python scripts/verify-agent-page.py",
     "verify:health": "python scripts/verify-health.py",
+    "verify:quote": "python scripts/verify-quote-timeout.py",
     "engine:audit": "node scripts/engine-audit.mjs",
     "stack": "node scripts/serve-stack.mjs"
   },
