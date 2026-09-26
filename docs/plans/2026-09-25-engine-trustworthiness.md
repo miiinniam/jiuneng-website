@@ -968,8 +968,10 @@ git commit -m "docs: 引擎体检/守护/健康检查用法增补"
 
 1. ✅ **已完成（2026-09-25）** `npx tsx scripts/verify-engine-probe.ts` → 三分支正确；已补上界直调用例 + 反向用例（`8d47ce3`），变异自证：去掉夹紧 → 红（活引擎被误报 timeout），还原 → 绿。
 2. ✅ **已完成（2026-09-25）** `python scripts/verify-health.py` → 全绿（含杀引擎 → degraded → 自动恢复；含默认 60s 间隔站点全绿）。**三重审查闭环**：T2 双评审（规格符合 PASS + 代码质量 REQUEST_CHANGES）→ 修复子 agent → 助手亲跑 → 只读复核子 agent **REQUEST_CHANGES**（4 条 fail_item + 9 条新发现）→ 修复子 agent（`096a3cb`/`c243e6e`/`98b8431`）→ 助手亲跑 + 独立复现 + 只读复核子 agent **APPROVE**（4 条 fail_item 全部真闭环）→ D 组非阻塞项修复（`8d47ce3`）。提交历史：`2f49858` `f250f40` `096a3cb` `c243e6e` `98b8431` `8d47ce3`。
-3. `python scripts/verify-stack.py` → 全绿（含杀引擎 → 60s 内自恢复 → 测算可用）
-4. `python scripts/verify-engine-audit.py` → 全绿（含死端口必须非 0 退出）
+3. ✅ **已完成（2026-09-26）** `python scripts/verify-stack.py` → 全绿（含杀引擎 → 60s 内自恢复 → 测算可用）。助手亲跑 `EXIT=0`（107s，六段全绿：②端口前置检查报出占用 PID 并非 0 退出 / ③按身份清场 / ④三服务就绪且父进程=守护 / ⑤A 杀引擎 15.6s 自恢复且测算 ok / ⑤B 杀网关「先坏后好」/ ⑥`STACK_MAX_RESTARTS=1` 超限全停 + 非 0 退出 / ⑦收尾恢复）。子 agent 两组变异自证（去自动重启 → 红；超限停机判据失效 → 红）。提交 `7942439`。
+4. ✅ **已完成（2026-09-26）** `python scripts/verify-engine-audit.py` → 全绿（含死端口必须非 0 退出）。助手亲跑 `EXIT=0`（52s；死端口 19999 → exit 3 + 「引擎不在，体检无法进行」+ **两份产物字节级未变**；缺 `OSRM_API_BASE` → exit 2 拒绝猜地址）。子 agent 两组变异自证（不可达静默 continue → 红；`tax_comparison.conflict` 写死 false → 红）。产物 `docs/engine-audit/` 含内部成本参数 → **已进 `.gitignore`，绝不入库**（public 仓库）。提交 `070ff2f`。
+
+**T4 附带产出（诊断，不是猜测）**：悬了很久的「税率口径不一致」根因已定位在引擎侧 —— `backend/app/services/border_costs.py:501` 写的是 `tariff.import_duty_rate or _FIXED_FEES[...]["import_duty_fallback_pct"]`，**ACFTA 合法的 `0.0` 被 falsy 判假 → 静默回落 5% 兜底**；而同文件 `:243` 用的是正确的 `... if tariff else ...`。两侧都自称 `duty_source=atiga`。⇒ 这不是「两种业务口径」，是**引擎的 falsy-zero 缺陷**，应反馈 AIOSRM++ 侧修（本轮不改引擎，越界）。
 5. 生产 vs 本机同线路复算有书面对比（或明确标注"前置未完成，未执行"）
 6. `probe-quote-api.py` 与 `verify-agent-page.py` 复跑全绿（无回归）
 7. 体检表已交业务方，作为 A4 输入
