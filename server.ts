@@ -6,6 +6,7 @@ import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import {
   geminiModel,
+  deepseekModel,
   runAgentChat,
   sanitizeHistory,
   parseLang,
@@ -44,6 +45,53 @@ function getGeminiClient(): GoogleGenAI {
   }
   return aiClient;
 }
+
+/* ── 右下角「AI 数字员工」对话的模型选择 ────────────────────────
+   2026-09-26 拍板：**DeepSeek 优先**（model 默认 deepseek-flash，与主人 Hermes 同一入口
+   https://api.deepseek.com/v1），没配或调用失败时**回退 Gemini**（线上本就配着 GEMINI_API_KEY）；
+   两者都没有 → 如实报错，绝不假装答对。
+
+   为什么回退要卡在「一个字都还没发出去」时才做：半途换模型会让客户看到两段自相矛盾的话，
+   而且第一段的工具调用结果已经发出去了没法收回。回退必须**可追溯**（日志里写清楚谁失败、退到谁）。
+   CHAT_PROVIDER=deepseek|gemini 可强制指定（强制时不回退，验收 C 段钉着这条）。 */
+
+type ChatChoice = { label: string; model: ChatModel };
+
+function chatChoice(which: 'deepseek' | 'gemini'): ChatChoice | null {
+  if (which === 'deepseek') {
+    const key = (process.env.DEEPSEEK_API_KEY || '').trim();
+    if (!key) return null;
+    const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1').trim();
+    const model = (process.env.DEEPSEEK_MODEL || 'deepseek-flash').trim();
+    return { label: `DeepSeek(${model})`, model: deepseekModel({ apiKey: key, baseUrl, model }) };
+  }
+  if (!(process.env.GEMINI_API_KEY || '').trim()) return null;
+  return { label: 'Gemini(gemini-3.1-flash-lite)', model: geminiModel(getGeminiClient()) };
+}
+
+function chatPlan(): { primary: ChatChoice; fallback: ChatChoice | null } | null {
+  const forced = (process.env.CHAT_PROVIDER || '').trim().toLowerCase();
+  if (forced === 'deepseek' || forced === 'gemini') {
+    const only = chatChoice(forced);
+    return only ? { primary: only, fallback: null } : null;
+  }
+  const ds = chatChoice('deepseek');
+  const gem = chatChoice('gemini');
+  if (ds) return { primary: ds, fallback: gem };
+  return gem ? { primary: gem, fallback: null } : null;
+}
+
+/** 日志/自测用的一句话描述（**不含任何密钥值**）。 */
+function chatPlanLabel(): string {
+  const forced = (process.env.CHAT_PROVIDER || '').trim().toLowerCase();
+  const plan = chatPlan();
+  if (!plan) return `未配置（需 DEEPSEEK_API_KEY 或 GEMINI_API_KEY${forced ? `；已强制 CHAT_PROVIDER=${forced} 但没配对应密钥` : ''}）`;
+  return plan.fallback
+    ? `${plan.primary.label}（失败回退 ${plan.fallback.label}）`
+    : `${plan.primary.label}${forced ? '（CHAT_PROVIDER 强制指定，不回退）' : ''}`;
+}
+
+console.info(`[chat] 数字员工对话模型：${chatPlanLabel()}`);
 
 // API: Health probe —— 如实反映依赖状态。
 // 轻量模式必须永远快、永远 200（UptimeRobot 保活依赖它）；深探测只在 ?deep=1 时实时打引擎。
@@ -372,10 +420,46 @@ app.post('/api/agent-chat', async (req: Request, res: Response) => {
   try {
     const demo = demoModel(req.body?.messages, lang);
     if (demo) console.info('[agent-chat] 本地演示模型（AGENT_CHAT_DEMO=1）');
-    const model = demo ?? geminiModel(getGeminiClient());
-    for await (const ev of runAgentChat({ history, model, lang })) {
-      if (closed) break;
-      res.write(sseFormat(ev));
+    const plan = chatPlan();
+
+    /** 已吐出过**实质内容**（text/工具事件）→ 不许再换模型重放，否则客户看到两段自相矛盾的话。 */
+    let produced = false;
+    const pump = async (model: ChatModel): Promise<void> => {
+      for await (const ev of runAgentChat({ history, model, lang })) {
+        if (closed) break;
+        if (ev.event !== 'error') produced = true;
+        res.write(sseFormat(ev));
+      }
+    };
+
+    if (demo) {
+      await pump(demo);
+    } else if (!plan) {
+      console.error('[agent-chat] 未配置任何模型密钥（DEEPSEEK_API_KEY / GEMINI_API_KEY）');
+      if (!closed) res.write(sseFormat({ event: 'error', data: { message: agentI18n[lang].chat.error } }));
+    } else {
+      try {
+        await pump(plan.primary.model);
+      } catch (primaryError: any) {
+        const reason = String(primaryError?.message ?? primaryError);
+        if (produced) {
+          console.error('[agent-chat] 流中途失败（已吐出内容，不再回退）：', primaryError);
+        } else if (plan.fallback) {
+          console.warn(`[agent-chat] ${plan.primary.label} 调用失败，回退 ${plan.fallback.label}：${reason}`);
+          try {
+            await pump(plan.fallback.model);
+          } catch (fallbackError: any) {
+            console.error(`[agent-chat] 回退 ${plan.fallback.label} 也失败：`, fallbackError);
+          }
+        } else {
+          // 这条日志同时点出 DeepSeek 与 Gemini：回退这件事必须可追溯（验收 B 段钉着）
+          console.error(`[agent-chat] ${plan.primary.label} 调用失败，且没有可回退的 Gemini`
+            + `（未配 GEMINI_API_KEY 或已用 CHAT_PROVIDER 强制指定）：${reason}`);
+        }
+        if (!produced && !closed) {
+          res.write(sseFormat({ event: 'error', data: { message: agentI18n[lang].chat.error } }));
+        }
+      }
     }
   } catch (error: any) {
     console.error('agent-chat failed:', error);
@@ -496,6 +580,7 @@ if (process.env.AGENT_CHAT_SELFTEST === '1') {
       scenario,
       osrmConfigured: Boolean(process.env.OSRM_API_BASE),
       geminiKeyPresent: Boolean(process.env.GEMINI_API_KEY),
+      chatProvider: chatPlanLabel(),
       events,
     });
   });

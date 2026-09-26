@@ -9,7 +9,8 @@
 #   4. 密钥全部自动化,版本库和任何人都不需要经手密钥值:
 #        ENGINE_API_KEY    : generateValue=true → Render 生成 256 位随机值
 #        OSRM_ENGINE_KEY   : fromService        → 自动引用上面那把钥匙(两侧永远一致)
-#        GEMINI_API_KEY    : sync=false         → 唯一人工项,首次创建时面板会提示填写
+#        GEMINI_API_KEY    : sync=false         → 人工项,首次创建时面板会提示填写(作为对话的回退)
+#        DEEPSEEK_API_KEY  : sync=false         → 人工项,右下角「AI 数字员工」对话的主模型
 #   5. ⚠️ 改本文件**不会**自动新建服务(免费层 Blueprint 未开推送同步):
 #      必须进 Render Dashboard → Blueprint → **Sync** 才会应用。
 #      详见 docs/plans/2026-09-25-engine-trustworthiness.md「上线门槛」。
@@ -50,6 +51,15 @@ services:
         value: "75000"
         # 冷启动等待上限(默认 75s):前端 fetch 无独立超时,这里是端到端唯一的等待上限;
         # 给足才能「等出」休眠引擎的首次结果,而不是误报 engine_timeout。
+      - key: DEEPSEEK_API_KEY
+        sync: false
+        # 右下角「AI 数字员工」对话的**主**模型密钥(DeepSeek,OpenAI 兼容接口)。
+        # sync: false = 值不进仓库、蓝图也不自动同步 → 需在 Render 面板 Environment 手工填一次
+        # (与 GEMINI_API_KEY 同一套路)。填错/欠费不会让对话黑掉:服务端会自动回退 Gemini,
+        # 并把「谁失败、退到谁」写进日志可追溯。
+      - key: DEEPSEEK_MODEL
+        value: "deepseek-flash"
+        # 与主人 Hermes 同一入口(https://api.deepseek.com/v1,base 含 /v1 是硬要求)。
 
   # ── 测算引擎(OSRM++ 的窄暴露入口) ──────────────────────────────
   # 只放行 GET /health 与 POST /api/v1/route/cost,其余端点一律 404;

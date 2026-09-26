@@ -811,6 +811,8 @@ Render 服务页 → **Events** → 找到上次正常部署 → **Deploy** 即�
 | 三语内容 | `src/agent/content.ts`（`agentI18n` / `zh`+`vi`+`en`，与旧站同一套合规口径） |
 | 素材清单 | `src/agent/media.ts` 读 `assets.manifest.json`（构建时打进包，不是运行时 fetch） |
 | 路由 | `server.ts` 里 `/ai` 与 `/ai/` → dev 走 `vite.transformIndexHtml`，prod 走 `dist/ai.html`；Vite 多入口见 `vite.config.ts` 的 `build.rollupOptions.input` |
+| 对话模型 | 右下角气泡 `POST /api/agent-chat`（SSE）**DeepSeek 优先**（`DEEPSEEK_API_KEY`；`DEEPSEEK_BASE_URL` 必须含 `/v1`；`DEEPSEEK_MODEL` 默认 `deepseek-flash`）→ 未配/调用失败**回退 Gemini** → 都没有则如实回 `error` 事件（绝不让模型绕开工具自己编里程价格）。`CHAT_PROVIDER=deepseek\|gemini` 可强制指定（强制时不回退）。OpenAI 兼容形状转换（messages / tools / 分片参数拼接 / `tool_call_id` 配对）**只在** `server/agentChat.ts` 的 `deepseekModel()` 内，编排循环 `runAgentChat()` 与 Gemini 路径不动 |
+| 对话验收 | `scripts/verify-chat-deepseek.py`（假 DeepSeek + 假引擎 + 临时站点：请求形状 / 分片拼接 / id 配对 / 真工具链 / 回退与如实报错 / 白名单零泄漏 / `AGENT_CHAT_SELFTEST` 回归）；真密钥活链路用 `scripts/probe-chat-live.py` |
 | 多页构建 | `vite build` 产出 `dist/index.html` + `dist/ai.html`，两者都必须在 `dist/` 里 |
 | SEO | `ai.html` 内 canonical/og:url 指向 `https://site.jiuneng.space/ai`；`?lang=zh|vi|en` 可直达指定语言 |
 

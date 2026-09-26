@@ -280,6 +280,181 @@ export function geminiModel(ai: GoogleGenAI, modelName = 'gemini-3.1-flash-lite'
   };
 }
 
+/* ── 模型适配器：DeepSeek（OpenAI 兼容接口）─────────────────────
+   为什么要在适配器内部做格式转换：编排循环（runAgentChat）里的 contents 是 **Gemini 私有形状**
+   （{role, parts:[{text}|{functionCall}|{functionResponse}]}）。换 provider 最干净的做法是把循环改成
+   中性消息，但那会动到**已验收**的 Gemini 路径与自测路由（AGENT_CHAT_SELFTEST）；所以这里把
+   「知道 OpenAI 形状」这件事**只留在本适配器内部**：收循环给的 contents，发 OpenAI 的 messages。
+
+   三个真实坑（都有 scripts/verify-chat-deepseek.py 钉着，别凭感觉改）：
+   ① 工具参数在 OpenAI 协议里是**跨多片字符串拼接**的（delta.tool_calls[].function.arguments 逐片追加）
+      → 必须**拼完再 JSON.parse**，拼一半就 parse 必炸；
+   ② assistant.tool_calls[].id 与后续 role:'tool'.tool_call_id 必须配对 —— 而循环回填的
+      functionResponse **不带 id**，这里按「同一轮内出现顺序」合成 id（call_1、call_2…），
+      下一轮再按顺序（name 能对上优先按 name）把 functionResponse 翻成 role:'tool'；
+   ③ HTTP 级错误（401/400）必须**在吐出任何 text 之前**抛出 —— 编排层据此干净回退到 Gemini，
+      半途抛已经写出去的字就没法回退了。 */
+
+type OpenAiToolDecl = { type: 'function'; function: { name: string; description: string; parameters: unknown } };
+type OpenAiToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
+type OpenAiMessage =
+  | { role: 'system' | 'user'; content: string }
+  | { role: 'assistant'; content: string | null; tool_calls?: OpenAiToolCall[] }
+  | { role: 'tool'; tool_call_id: string; content: string };
+type OpenAiStreamDelta = { content?: string | null; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[] };
+
+/** Gemini functionDeclarations → OpenAI tools（形状不同，字段同名）。 */
+export function openAiTools(tools: unknown[]): OpenAiToolDecl[] {
+  const list = tools as { name: string; description: string; parameters: unknown }[];
+  return list.map((t) => ({
+    type: 'function' as const,
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  }));
+}
+
+/** 循环给的 Gemini 形状 contents → OpenAI messages（配对见文件头 ②）。
+ *  ⚠️ prevIds = **上一轮模型真给过的** tool_call id（来自流式 delta.id）。OpenAI 协议要求
+ *  assistant.tool_calls[].id 与后续 role:'tool'.tool_call_id **完全一致** —— 自己合成 call_1
+ *  会被真实 API 当成「无主结果」（这个坑就是验收脚本首跑抓出来的：实际发的是 'call_1'，
+ *  而模型给的是 'call_fake_1'）。 */
+export function toOpenAiMessages(
+  system: string,
+  contents: unknown[],
+  prevIds: { id: string; name: string }[] = [],
+): OpenAiMessage[] {
+  const out: OpenAiMessage[] = [{ role: 'system', content: system }];
+  let pending: { id: string; name: string }[] = [];
+
+  for (const raw of contents) {
+    const msg = raw as { role?: string; parts?: unknown[] };
+    const parts = Array.isArray(msg.parts) ? msg.parts : [];
+    const text = parts
+      .map((p) => (p as { text?: unknown }).text)
+      .filter((t): t is string => typeof t === 'string')
+      .join('');
+    const calls = parts
+      .map((p) => (p as { functionCall?: { name?: unknown; args?: unknown } }).functionCall)
+      .filter((c): c is { name?: unknown; args?: unknown } => Boolean(c));
+    const responses = parts
+      .map((p) => (p as { functionResponse?: { name?: unknown; response?: unknown } }).functionResponse)
+      .filter((r): r is { name?: unknown; response?: unknown } => Boolean(r));
+
+    if (calls.length) {
+      // 优先沿用**模型真给过的** id（prevIds 与协议顺序一一对应），拿不到才合成兜底 ——
+      // 自己合成 id 会被真实 API 当成「无主工具结果」（验收脚本 A 段钉着这条）。
+      pending = calls.map((c, i) => prevIds[i] ?? { id: `call_${i + 1}`, name: String(c.name ?? '') });
+      out.push({
+        role: 'assistant',
+        content: text || null,
+        tool_calls: calls.map((c, i) => ({
+          id: pending[i].id,
+          type: 'function' as const,
+          function: { name: String(c.name ?? ''), arguments: JSON.stringify(c.args ?? {}) },
+        })),
+      });
+      continue;
+    }
+
+    if (responses.length) {
+      for (const r of responses) {
+        const name = String(r.name ?? '');
+        const at = pending.findIndex((p) => p.name === name);
+        const id = at >= 0 ? pending.splice(at, 1)[0].id : (pending.shift()?.id ?? `call_${out.length}`);
+        out.push({ role: 'tool', tool_call_id: id, content: JSON.stringify(r.response ?? {}) });
+      }
+      continue;
+    }
+
+    if (text) out.push({ role: msg.role === 'model' ? 'assistant' : 'user', content: text });
+  }
+  return out;
+}
+
+/** 逐行解析 OpenAI SSE：只认 `data:` 行；`[DONE]` 与坏片跳过（流以 EOF 结束）。 */
+async function* openAiSseChunks(body: unknown): AsyncGenerator<{ choices?: { delta?: OpenAiStreamDelta }[] }, void, void> {
+  const decoder = new TextDecoder();
+  let buf = '';
+  // Node 的 fetch 响应体是 web stream，可直接 for-await（as unknown 只为绕开 tsconfig 无 DOM lib）
+  for await (const chunk of body as AsyncIterable<Uint8Array>) {
+    buf += decoder.decode(chunk, { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, idx).replace(/\r$/, '');
+      buf = buf.slice(idx + 1);
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === '[DONE]') continue;
+      try {
+        yield JSON.parse(payload) as { choices?: { delta?: OpenAiStreamDelta }[] };
+      } catch {
+        /* 单行坏片忽略：不让一行垃圾打断整条流 */
+      }
+    }
+  }
+}
+
+export type DeepSeekOptions = { apiKey: string; baseUrl?: string; model?: string; fetchImpl?: typeof fetch };
+
+/** DeepSeek（OpenAI 兼容）适配器。baseUrl **必须含 /v1**（官方入口 https://api.deepseek.com/v1）。 */
+export function deepseekModel(opts: DeepSeekOptions): ChatModel {
+  const base = (opts.baseUrl || 'https://api.deepseek.com/v1').replace(/\/+$/, '');
+  const model = opts.model || 'deepseek-flash';
+  const doFetch = opts.fetchImpl ?? fetch;
+  /** 上一轮流式给出的**真实** tool_call id —— 下一轮必须原样带回去（见 toOpenAiMessages 注释）。 */
+  let lastIds: { id: string; name: string }[] = [];
+
+  return {
+    async *stream(contents, { system, tools }) {
+      const res = await doFetch(`${base}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${opts.apiKey}` },
+        body: JSON.stringify({
+          model,
+          stream: true,
+          temperature: 0.3,
+          messages: toOpenAiMessages(system, contents, lastIds),
+          tools: openAiTools(tools),
+          tool_choice: 'auto',
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        throw new Error(`deepseek_http_${res.status}:${detail.slice(0, 300)}`);
+      }
+      if (!res.body) throw new Error('deepseek_no_body');
+
+      const acc = new Map<number, { id: string; name: string; args: string }>();
+      for await (const chunk of openAiSseChunks(res.body)) {
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta) continue;
+        if (typeof delta.content === 'string' && delta.content) yield { text: delta.content };
+        for (const tc of delta.tool_calls ?? []) {
+          const i = typeof tc.index === 'number' ? tc.index : 0;
+          const cur = acc.get(i) ?? { id: `call_${i + 1}`, name: '', args: '' };
+          if (tc.id) cur.id = tc.id;
+          if (tc.function?.name) cur.name = tc.function.name;
+          if (tc.function?.arguments) cur.args += tc.function.arguments;   // ← 坑 ①：逐片拼接
+          acc.set(i, cur);
+        }
+      }
+
+      const entries = [...acc.entries()].sort((a, b) => a[0] - b[0]);
+      lastIds = entries.map(([, v]) => ({ id: v.id, name: v.name }));      // ← 坑 ②：记下来配对
+      const calls = entries
+        .map(([, v]) => {
+          let args: Record<string, unknown> = {};
+          try {
+            args = v.args ? (JSON.parse(v.args) as Record<string, unknown>) : {};
+          } catch {
+            throw new Error('deepseek_bad_tool_args');
+          }
+          return { name: v.name, args };
+        });
+      if (calls.length) yield { calls };
+    },
+  };
+}
+
 /** 自测用假模型：按脚本**逐次**吐出「调用工具」或「文本」，不依赖任何外部 API。
  *  注意必须一次性消费脚本（游标），不能每次调用 stream() 都从头重放 —— 编排循环会多轮
  *  调用 stream()，重放会让同一轮工具调用跑满 MAX_ROUNDS（这个坑是自测自己抓出来的）。 */
