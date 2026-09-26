@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-09-24T07:16:46.770Z",
+  "roles": {},
+  "services": {},
+  "apps": {},
+  "brain": null,
+  "heroLoop": null,
+  "ctaLoop": null,
+  "photos": {
+    "case1": "/assets/case-rail.jpg",
+    "case2": "/assets/case-04-cross-border-heavy-truck-D0zxHgaL.jpg",
+    "case3": "/assets/hero-wind-tower.jpg",
+    "platform": "/assets/system-overview.jpg",
+    "sol1": "/assets/sol-rail.jpg",
+    "sol2": "/assets/sol-infra.jpg",
+    "sol3": "/assets/sol-power.jpg",
+    "sol4": "/assets/sol-tower.jpg",
+    "fleet1": "/assets/vehicle-fleet.jpg",
+    "fleet2": "/assets/vehicle-blade.jpg",
+    "fleet3": "/assets/01-封面-中越陆运工程重卡-定制生成-bSy7Ns0J.jpg",
+    "sys2": "/assets/system-tracking.jpg"
+  }
+}

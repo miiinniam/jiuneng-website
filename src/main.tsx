@@ -494,7 +494,7 @@ const translations: Record<Lang, Translation> = {
       intro: '适合发送装箱单、设备图纸、尺寸重量表、目的地地址、交付时间和单证状态。',
       cta: '立即沟通',
       details: [
-        { label: '邮箱', value: 'quoctejiuneng@gmail.com' },
+        { label: '邮箱', value: 'jiuneng.vn@gmail.com' },
         { label: '中国咨询电话', value: '15687419919' },
         { label: '河内办公地址', value: '越南河内市纸桥坊 Duy Tân 街 82 号 5 楼 R03 室' },
         { label: '微信 / WhatsApp', value: '待补充', pending: true },
@@ -733,7 +733,7 @@ const translations: Record<Lang, Translation> = {
       intro: 'Phù hợp gửi packing list, bản vẽ thiết bị, bảng kích thước trọng lượng, địa chỉ đích, thời gian giao và trạng thái chứng từ.',
       cta: 'Trao đổi ngay',
       details: [
-        { label: 'Email', value: 'quoctejiuneng@gmail.com' },
+        { label: 'Email', value: 'jiuneng.vn@gmail.com' },
         { label: 'Hotline Trung Quốc', value: '15687419919' },
         { label: 'Văn phòng Hà Nội', value: 'R03, Tầng 5, Số 82 phố Duy Tân, Phường Cầu Giấy, Hà Nội' },
         { label: 'WeChat / WhatsApp', value: 'Đang cập nhật', pending: true },
@@ -972,7 +972,7 @@ const translations: Record<Lang, Translation> = {
       intro: 'Useful files: packing lists, equipment drawings, dimension and weight sheets, destination address, delivery timing, and document status.',
       cta: 'Start a conversation',
       details: [
-        { label: 'Email', value: 'quoctejiuneng@gmail.com' },
+        { label: 'Email', value: 'jiuneng.vn@gmail.com' },
         { label: 'China hotline', value: '15687419919' },
         { label: 'Hanoi office', value: 'R03, 5th Floor, 82 Duy Tan St., Cau Giay Ward, Hanoi' },
         { label: 'WeChat / WhatsApp', value: 'Coming soon', pending: true },
@@ -1617,7 +1617,7 @@ function App() {
                   <strong className={detail.pending ? 'ph' : undefined}>{detail.value}</strong>
                 </div>
               ))}
-              <a className="button primary" href="mailto:quoctejiuneng@gmail.com">
+              <a className="button primary" href="mailto:jiuneng.vn@gmail.com">
                 <Mail size={18} />
                 {t.contact.cta}
               </a>
@@ -1639,7 +1639,7 @@ function App() {
           </span>
           <span>
             <Mail size={15} />
-            quoctejiuneng@gmail.com
+            jiuneng.vn@gmail.com
           </span>
           <span>
             <MapPin size={15} />

@@ -22,3 +22,32 @@ services:
         sync: false  # 在 Render 面板手动填写,勿提交到仓库
       - key: APP_URL
         sync: false  # 可选:站点公网地址,上线后可在面板填 https://<service>.onrender.com
+      - key: OSRM_API_BASE
+        sync: false  # 测算引擎地址,填引擎服务的公网地址(如 https://jiuneng-osrm-engine.onrender.com)
+                     # 填根地址即可(官网侧自动补 /api/v1);想写全 https://host/api/v1 也支持
+      - key: OSRM_ENGINE_KEY
+        sync: false  # 与引擎服务的 ENGINE_API_KEY 填同一个值(官网以 X-API-Key 头发出)
+
+  # ── 测算引擎(OSRM++ 的窄暴露入口) ──────────────────────────────
+  # 只放行 GET /health 与 POST /api/v1/route/cost,其余端点一律 404;
+  # 必须带 X-API-Key,密钥取自 ENGINE_API_KEY(未配置则拒绝启动)。
+  # 代码与数据由 `npm run sync:engine` 从 AIOSRM++ 同步到 deploy/osrm-engine/,
+  # 排除表硬性剔除公司印章/签名/真实 API Key/银行账号/审计文件。
+  - type: web
+    name: jiuneng-osrm-engine
+    runtime: python
+    repo: https://github.com/miiinniam/jiuneng-website
+    rootDir: deploy/osrm-engine
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    healthCheckPath: /health
+    envVars:
+      - key: ENGINE_API_KEY
+        sync: false  # 必填:在 Render 面板生成一串随机值,与官网侧 OSRM_ENGINE_KEY 保持一致
+      - key: ENGINE_RATE_LIMIT
+        value: "60"  # 每 IP 每分钟最大请求数
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: OSRM_RESOURCE_DIR
+        value: /opt/render/project/src/deploy/osrm-engine  # 数据目录(可写,重启后回到仓库版本)

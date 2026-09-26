@@ -50,8 +50,62 @@ Render 服务页 → **Settings → Environment**:
 | `GEMINI_API_KEY` | ⚠️ **必填**,Gemini API 密钥(render.yaml 里 `sync: false`,必须手动填) |
 | `APP_URL` | 可选,填 `https://jiuneng-website.onrender.com` |
 | `NODE_ENV` | render.yaml 已配 `production`,面板里应能看到 |
+| `OSRM_API_BASE` | 测算引擎地址,见下面「第 3.5 步」;不填则页面上的「快速测算」如实显示引擎未接入 |
+| `OSRM_ENGINE_KEY` | 与引擎服务的 `ENGINE_API_KEY` **同一个值** |
 
 然后 **Manual Deploy → Deploy latest commit** 触发一次重部署让环境变量生效。
+
+## 第 3.5 步:测算引擎(OSRM++ 窄暴露服务)首次上线
+
+官网的「快速测算」与 AI 对话里的线路工具都需要它。Blueprint 里已声明为第二个服务
+`jiuneng-osrm-engine`(`rootDir: deploy/osrm-engine`),但**代码与数据要先同步进仓库**:
+
+```bash
+npm run sync:engine     # 从 D:/01_业务/立三方/AIOSRM++ 同步引擎代码 + 最小运行数据
+git add deploy/osrm-engine && git commit -m "chore: 同步测算引擎" && git push
+```
+
+同步脚本的排除表是**安全硬约束**,每次都会复核并排除:公司印章、签名图、
+`data/ai_config.json`(真实 API Key)、`data/company_info.json`(银行账号 + SWIFT)、审计与计数文件。
+一旦这些文件出现在副本里脚本直接报错退出——**看到报错不要绕过,先查为什么**。
+
+两个服务各填一处环境变量:
+
+| 服务 | 变量 | 值 |
+|---|---|---|
+| `jiuneng-osrm-engine` | `ENGINE_API_KEY` | ⚠️ **必填**,自拟一串随机字符(建议 32 位),勿提交到仓库 |
+| `jiuneng-osrm-engine` | `ENGINE_RATE_LIMIT` | 可选,每 IP 每分钟请求上限,默认 60 |
+| `jiuneng-website` | `OSRM_API_BASE` | 引擎公网地址,如 `https://jiuneng-osrm-engine.onrender.com` |
+| `jiuneng-website` | `OSRM_ENGINE_KEY` | 与 `ENGINE_API_KEY` **同值** |
+
+> `OSRM_API_BASE` 填根地址即可(官网侧自动补 `/api/v1`);写全 `https://host/api/v1` 也支持。
+> `ENGINE_API_KEY` 没配时引擎服务**会拒绝启动**(防止忘设密钥导致引擎裸奔),日志里会明确提示。
+
+验证引擎侧:
+
+```bash
+# 健康检查(免密钥,给 Render 与保活用)
+curl https://jiuneng-osrm-engine.onrender.com/health
+# 期望:{"status":"ok"}
+
+# 未公开端点必须 404(这是保护,不是故障)
+curl -o /dev/null -w "%{http_code}\n" https://jiuneng-osrm-engine.onrender.com/api/v1/vehicles   # 期望 404
+curl -o /dev/null -w "%{http_code}\n" https://jiuneng-osrm-engine.onrender.com/docs              # 期望 404
+
+# 业务端点无密钥必须 401
+curl -o /dev/null -w "%{http_code}\n" -X POST https://jiuneng-osrm-engine.onrender.com/api/v1/route/cost   # 期望 401
+
+# 官网侧端到端(能出里程与参考价区间即通)
+curl -s -X POST https://jiuneng-website.onrender.com/api/osrm-quote \
+  -H "Content-Type: application/json" \
+  -d '{"origin":"nanning","destination":"hanoi","border":"youyiguan","weight_kg":20000,"volume_m3":60,"mode":"consolidated"}'
+# 期望:{"ok":true,...,"price_min_vnd":...,"price_max_vnd":...,"profile_honored":true}
+# 若 ok:false reason:engine_not_configured → 官网侧 OSRM_API_BASE 没填
+# 若 ok:false reason:engine_error(且引擎日志 401) → 两侧密钥不一致
+```
+
+> 引擎免费层同样会休眠:第一个测算可能要等 15–30s(官网超时设为 40s,过程中显示「测算中…」)。
+> 把 `https://jiuneng-osrm-engine.onrender.com/health` 一并加进 UptimeRobot 保活。
 
 ## 第四步:验证上线
 

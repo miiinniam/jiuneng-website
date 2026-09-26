@@ -554,7 +554,8 @@ document.documentElement.scrollWidth === document.documentElement.clientWidth   
 最右亮像素来自照片高光（天空）而非内容，实测据此得出的「导航内容到 x=374」是错的。
 
 > ⚠️ 视觉分析模型还会**编造具体文本**：实测中它把源码里三处一致的地址
-> 「纸桥坊 5 楼 R03」读成「还剑郡 6 楼 603 室」，把邮箱 `quoctejiuneng@` 读成 `quotejiuneng@`。
+> 「纸桥坊 5 楼 R03」读成「还剑郡 6 楼 603 室」，把当时的联系邮箱（旧地址 `quoctejiuneng@`，
+> 现已统一换成 **`jiuneng.vn@gmail.com`**）读成 `quotejiuneng@`。
 > **涉及事实性内容（地址、编号、邮箱）和布局尺寸，必须回源码 / 用 CDP 核对，不要采信视觉分析的字面读数。**
 
 ---
@@ -798,15 +799,224 @@ Render 服务页 → **Events** → 找到上次正常部署 → **Deploy** 即�
 
 ---
 
-## 14. 相关文档
+## 14. /ai 物流 AI 智能体页（新增，2026-09）
+
+参照 oneaix.com/cuber 的版式语言新增的独立页面，与旧首页并存（**未改动旧首页任何代码**）。
+
+### 14.1 架构
+
+| 项 | 值 |
+|---|---|
+| 入口 | `ai.html` → `src/agent/main.tsx` → `src/agent/App.tsx`（页面组件）+ `src/agent/styles.css`（页面级 CSS，`.jx-*` 前缀，与 `styles.css` 完全隔离） |
+| 三语内容 | `src/agent/content.ts`（`agentI18n` / `zh`+`vi`+`en`，与旧站同一套合规口径） |
+| 素材清单 | `src/agent/media.ts` 读 `assets.manifest.json`（构建时打进包，不是运行时 fetch） |
+| 路由 | `server.ts` 里 `/ai` 与 `/ai/` → dev 走 `vite.transformIndexHtml`，prod 走 `dist/ai.html`；Vite 多入口见 `vite.config.ts` 的 `build.rollupOptions.input` |
+| 多页构建 | `vite build` 产出 `dist/index.html` + `dist/ai.html`，两者都必须在 `dist/` 里 |
+| SEO | `ai.html` 内 canonical/og:url 指向 `https://site.jiuneng.space/ai`；`?lang=zh|vi|en` 可直达指定语言 |
+
+### 14.2 页面区块（14 段，2026-09 起为「旧首页内容全量移植版」）
+
+数字员工线：Hero（提问式小标题 + 渐变主标题 + 5 个角色胶囊 + 渐变描边输入框）→ AI 数字员工岗位矩阵（5 卡，首卡跨两列）
+→ 智能体服务轮播（4 条，圆点/箭头/自动播放/触屏滑动）→ 应用场景标签页（5 个）→ AI 底座（3 卡 + 4 项数据）
+→ 代表项目 + 领域跑马灯 → 在线询价（复用 `/api/logistics-consult`）→ CTA 渐变带 → 联系 → 页脚。
+
+公司/业务线（移植自旧首页，`#system` `#solutions` `#fleet` `#network` `#qual` 五个锚点）：
+
+| 区块 | 内容 | 图片来源 |
+|---|---|---|
+| `#system` 平台系统 | 12 步全流程 + 5 个系统模块 + 第二张系统截图 | `photos.sys2` = `system-tracking.jpg` |
+| `#solutions` 解决方案 | 4 卡（轨交/基建/电力/新能源，sector + 图） | `photos.sol1..sol4` |
+| `#fleet` 设备资源 | 3 卡（风机特种车/叶片举升车/配套资源 + spec 行） | `photos.fleet1..fleet3` |
+| `#network` 中越协同网络 | 中国侧/越南侧两栏 + 合规说明 | 无 |
+| `#qual` 企业信息与资质 | 2 张企业登记卡（代码/税号/地址） | 无 |
+
+排序（用户 2026-09 确认）：岗位矩阵 → 智能体服务 → 应用场景 → AI 底座 → **平台系统** → **解决方案** → **设备资源** → 代表项目 → **中越协同网络** → **企业信息与资质** → 在线询价 → CTA → 联系 → 页脚。
+导航 7 项（`数字员工/智能体服务/应用场景/平台系统/解决方案/项目案例/在线询价`），页脚「解决方案」「企业信息」已改指新锚点。
+
+> **`#about`「关于玖能」已按用户评论整块删除**（2026-09，评论原文「这一些不要」）：数字带 + 2 段正文 + 使命/愿景 + 4 条价值观全部移除，
+> 组件 / `content.ts` 的 `about` 类型与三语文案 / 导航项 / 样式一起删干净（`grep -rn "t.about\|jx-about\|#about" src/agent/` 应为空）。
+> 该块文案仍可从旧站 `src/main.tsx` 的 `about` 段落复原，本次删除未提交、无历史损失。
+
+> 移植的取舍：① 旧站 `about` 与 `qual` 都放了企业登记信息，新页只在 `#qual` 保留一处（`about` 现已整块删除）；
+> ② 旧站 hero 的 4 条数字**不做数字滚动动效** —— 4 项里 3 项不是数字，计数器没有意义；数字带随 `#about` 一并删除；
+> ③ 旧站 `#platform` 第二张截图原样复用，但 `#brain` 已用 `system-overview.jpg`，所以新板块只放 `system-tracking.jpg`，全页不重复同一张图；
+> ④ 三语文案**直接从旧站 `src/main.tsx` 搬**（vi/en 未重译）；⑤ 新增 `#system` 的合规兜底句：
+> 「平台系统为项目内部管理工具……不构成对外实时追踪服务」，避免与「不宣称全程 GPS 追踪」的口径冲突。
+
+> **新增样式不要复用既有类名**：新板块最初用了 `.jx-stats` 做数字带，而 **AI 底座区块原本就用 `.jx-stats`**，
+> 后写的规则把它压掉，底座高度从 868px 变成 890px（样式漂移）。删掉 `#about` 时一并移除了这组规则，底座恢复原样。
+> 改 /ai 样式前先 `grep` 类名是否已被占用。
+
+**能力状态必须如实标注**：`已上线 / 内测中 / 建设中` 三档（`content.ts` 的 `status` 字段），
+目前只有「询价顾问」是 `live`。/ai 的合规口径与旧站一致：越南侧一律「本地合作代理网络」，
+不宣称自营报关/仓储/GPS 全程追踪/7×24，AI 输出统一表述为「初步评估，不构成报价或时效承诺」。
+
+### 14.3 素材管线（图片与动效）
+
+- 目录 `public/assets/agent/`，命名与规格见 [`AI-ASSET-PROMPTS.md`](AI-ASSET-PROMPTS.md)。
+- `npm run assets:scan` 扫描目录 → 生成 `src/agent/assets.manifest.json`（缺失即不渲染，不 404、不留空框）。
+- 动效形态照参照站：**透明底循环 MP4 + 同名 PNG 首帧**（`<video autoplay muted loop playsinline poster>`）。
+- `prefers-reduced-motion: reduce` 时 **video 元素数 = 0**，自动只显示 PNG 首帧（已实测）。
+- 素材超体积时扫描脚本直接报警并给出 ffmpeg 压缩命令。
+
+### 14.4 验证配方（实测通过）
+
+```bash
+npm run lint && npm run build
+NODE_ENV=production PORT=3300 node dist/server.cjs
+npm run verify:agent        # scripts/verify-agent-page.py，六档视口 + 交互 + 全页亮度
+```
+
+覆盖内容：360/390/768/1024/1440/1920 无横向溢出、内容隐身计数为 0、汉堡菜单可展开、
+场景标签切换、轮播翻页、hero 输入 → 询价表单预填、表单 → API 的**成功与失败两条分支**
+（成功分支用 CDP `Fetch.fulfillRequest` 拦截塞回契约 JSON，不依赖真实密钥）、全页 200px 带亮度扫描。
+
+> 旧脚本 `verify-layout.py` 的探针选择器是旧首页类名，对 /ai 恒返回 `None`，判定 /ai 必须用 `verify-agent-page.py`。
+
+### 14.5 AI 数字员工对话（2026-09 新增）
+
+右下角悬浮按钮「问数字员工」→ 面板 → `POST /api/agent-chat`（**SSE 流式 + 函数调用**）。
+
+| 文件 | 作用 |
+|---|---|
+| `server/agentChat.ts` | 编排器：SSE 事件、工具声明/执行、Gemini 适配器、自测假模型、历史清洗 |
+| `server.ts` | 挂 `POST /api/agent-chat`；自测路由 `POST /api/agent-chat/selftest` **仅在 `AGENT_CHAT_SELFTEST=1` 时挂载** |
+| `src/agent/ChatPanel.tsx` | 面板 UI：SSE 消费、极简 markdown、工具状态条、三语建议条、免责声明 |
+| `src/agent/content.ts` | `chat` 文案块（中/越/英三份，含 `toolLabels`/`error`/`emptyReply`） |
+
+**SSE 事件契约**（前端按 `event:`+`data:` 帧解析）：
+
+```
+event: text        {"content":"…"}                       # 正文增量
+event: tool_start  {"name":"query_route_cost","label":"正在查询线路…"}
+event: tool_done   {"name":"…","ok":true,"summary":"已取到线路：约 172 km"}
+event: error       {"message":"站内兜底文案（按语言）"}
+event: done        {"tools":1,"rounds":2}
+```
+
+**两个工具（都是"查不到就说查不到"，不许编）**
+
+| 工具 | 数据来源 | 关键约束 |
+|---|---|---|
+| `query_route_cost` | `OSRM_API_BASE` 的 OSRM++ `POST /route/alternatives` | **只回里程/时长/车型/备选数，价格字段在服务端白名单式重建 payload 时被丢掉**（`pricing: 'withheld'`）。未配 `OSRM_API_BASE` → `ok:false`「报价引擎未接入」；网络/非 2xx → `ok:false`「报价引擎暂时不可用」 |
+| `lookup_service_info` | 直接 import `src/agent/content.ts`（站内内容单一事实来源） | 按 `service/documents/process/contact/status` 取切片；答案来自站内而不是模型记忆 |
+
+> **为什么把价格剥掉**：站内口径写死「不得承诺运费价格」，官网不对外报运费。OSRM++ 返回里带 `cost_total` 等字段，若原样进模型上下文，AI 迟早会报出来。剥离动作在**服务端代码**里（不是靠提示词），并且有断言覆盖（见下）。
+
+**环境变量**：`OSRM_API_BASE`（可选，如 `https://jiuneng.space/api/v1`；不配则该能力如实标为未接入）、`AGENT_CHAT_SELFTEST=1`（仅调试用，生产**不要**开）。
+
+**验证配方（本地实测通过）**
+
+```bash
+# 1) 工具层：价格剥离断言（需要引擎在跑）
+#    注意：脚本先断言「工具真的算出了里程/车数」再做泄漏检查——不然参数契约一变就会空转假通过
+OSRM_API_BASE=http://127.0.0.1:18000 npx tsx scripts/probe-tools.ts
+#    期望：distance_km / vehicle_count 有值；breakdown / profit_vnd / margin_rate / border_fees / cost_* / geometry 全部「未出现」
+
+# 2) 编排层：三场景自测（不需要 GEMINI_API_KEY）
+curl -s -X POST localhost:3300/api/agent-chat/selftest -H 'Content-Type: application/json' -d '{"scenario":"route"}'   # 已配 base → ok:true
+curl -s -X POST localhost:3301/api/agent-chat/selftest -H 'Content-Type: application/json' -d '{"scenario":"route"}'   # 未配 base → ok:false「报价引擎未接入」
+curl -s -X POST localhost:3300/api/agent-chat/selftest -H 'Content-Type: application/json' -d '{"scenario":"info"}'    # 站内资料工具
+
+# 3) UI 层（scripts/verify-agent-page.py 不覆盖对话面板）
+#    ⚠️ 用真链路探针（零拦截，真打服务端 SSE），工具条里的数字必须来自真实引擎：
+python scripts/probe-chat-live.py
+#    已弃用 probe-chat-ui.py：它用 CDP 拦截伪造 SSE、从没跑过服务端那条路由，
+#    /api/agent-chat 因 req.on('close') 返回 200 空流的生产 bug 就是这么被藏住的。
+```
+
+**坑**
+
+- 本机没有 `GEMINI_API_KEY` → 真实对话只走得到 `error` 帧，**这正是"不许假装成功"那条路径**，要按语言显示站内兜底文案，不要显示空白气泡。
+- 自测假模型必须**一次性消费脚本**（游标），不能每次 `stream()` 都从头重放——编排循环会多轮调用它，重放会让同一轮工具调用跑满 `MAX_ROUNDS`（这个 bug 就是自测抓出来的）。
+- 悬浮按钮展开面板后**必须隐藏**，否则和面板头部关闭按钮重复。
+- 工具状态条收敛时用服务端 `summary` 替换文案，不要拼「正在查询… 完成」（语义自相矛盾）。
+
+### 14.6 待决策（未执行）
+
+| 项 | 说明 |
+|---|---|
+| `/ai` 是否升为首页 | 现在是独立页，旧首页未动；升首页需改 `index.html`/`server.ts` 路由或做跳转 |
+| 旧首页是否加入口 | 目前在旧站导航/页脚没有任何指向 `/ai` 的链接 |
+| sitemap | `public/sitemap.xml` 尚未收录 `/ai` |
+| CTA 深蓝色块 | 全页亮度扫描有 2 个 200px 带 <120（那条 CTA 渐变带，约占页面积 5%），保留与否待定 |
+| 旧首页 CTA 与 /ai 的衔接 | `/ai` 的询价表单与旧站 `#consult` 是两套 UI、同一个 API |
+
+> **已决（2026-09，见 §14.7）**：① OSRM++ 接口地址 —— 引擎就是本机 `D:\01_业务\立三方\AIOSRM++`（不是 `…\玖能\OSRM\OSRM++`，那里只有车型库），已按 Render 独立服务方案接入；
+> ② 要不要报参考价 —— 业务确认对客给「参考价区间」= 引擎售价 ±10%，内部成本/利润/口岸费用明细一律不出官网。
+
+---
+
+### 14.7 快速测算 + OSRM++ 引擎接入（2026-09 完成）
+
+#### 对客口径（业务已拍板）
+
+| 项 | 口径 |
+|---|---|
+| 价格 | **只给参考价区间** = 引擎 `price_vnd`（售价）× 0.9 ~ × 1.1，取整到 10 万 VND；文案统一「初步测算，非正式报价」 |
+| 可给 | 里程、预计行驶时长、车数、车型 |
+| **绝不给** | `breakdown`（内部成本）、`profit_vnd`（利润）、`margin_rate`（毛利率）、`border_fees`（两端口岸费用明细）、`cost_*`、`geometry`；引擎的 `profile_note` 原文含 `OSRM_AVAILABLE_PROFILES` 等内部措辞，也不对客展示（只写服务端日志，页面用本地化标准说明代替） |
+
+#### 唯一出口
+
+```
+浏览器 ──POST /api/osrm-quote──┐
+AI 对话工具 query_route_cost ──┤→ server/osrmQuote.ts runQuote() ──POST {base}/route/cost──→ 引擎（带 X-API-Key）
+                               └→ 白名单重建出参（内部字段在此丢弃）
+```
+
+- `server/osrmQuote.ts`：**所有剥价/校验/契约拼装只在这里**。别在别处再写一套（曾经因为「假后端照单全收松散参数」而掩盖了真契约不符的问题）。
+- `server.ts` 挂 `POST /api/osrm-quote`（表单用）与 `GET /api/osrm-quote/places`（下拉清单，城市/车型白名单的服务端唯一来源，前端不重复维护）。
+- 真契约：`{route:{origin:{lat,lng}, destination, border?}, cargo:{weight_kg, volume_m3?, type}, vehicle:{loading_mode, vehicle_model_id?}}` → `{ok, distance_km, driving_h, vehicle_count, vehicle_id, vehicle_label, price_min_vnd, price_max_vnd, profile_honored, ...}`。
+- **引擎校验踩坑**：拼车（`consolidated`）**必须给 `cargo.volume_m3`**，否则 422（`Value error, 拼货模式（consolidated）必须填写 cargo.volume_m3`）。官网侧已提前拦（`reason: need_volume`），UI 上体积在拼车时是必填、整车时可空。
+- 起终点走**白名单城市/口岸**（17 个，服务端坐标），不用地理编码：既避免依赖 Nominatim（本机实测 DNS 不通），也避免客户随便填地址。车型只放常用 6 种，**不下发引擎的 34 个内部车型库**。
+- `OSRM_API_BASE` 填根地址（`https://host`）或 `https://host/api/v1` 都行（自动补 `/api/v1`）；超时 40s（Render 免费层冷启动 15–30s）。
+
+#### 引擎部署（Render 第二个服务）
+
+`deploy/osrm-engine/` 是 AIOSRM++ 引擎的**窄暴露网关**（不改引擎源码）：
+
+```bash
+npm run sync:engine        # 从 D:/01_业务/立三方/AIOSRM++ 同步引擎代码 + 最小运行数据
+```
+
+- `server.py`：只放行 `GET /health`（免密钥，给 Render 探活）与 `POST /api/v1/route/cost`，其余端点一律 404 —— 挡住 `/api/v1/vehicles`（车型库后台，`role: internal`）、`/rates/*`、`/border/*`、`/quote/export`、`/ai/*`、`/docs`、`/openapi.json`；业务端点必须带 `X-API-Key`（= `ENGINE_API_KEY`，未配置则拒绝启动）；每 IP 每分钟 60 次限流。
+- **同步排除表是安全硬约束（只增不减）**：`company_seal.png`、`company_sign.png`（印章/签名图）、`data/ai_config.json`（真实 API Key）、`data/company_info.json`（银行账号 + SWIFT）、审计与计数状态文件。脚本每次同步后自动复核，发现即报错退出。
+- `render.yaml` 里的两个服务：`jiuneng-website`（Node）+ `jiuneng-osrm-engine`（Python，`rootDir: deploy/osrm-engine`）。
+- 上线只需在 Render 面板填三样：引擎服务 `ENGINE_API_KEY`（随机串）、官网服务 `OSRM_API_BASE`（引擎公网地址）、`OSRM_ENGINE_KEY`（与前者同值）。
+- 已知限制：免费层休眠（配 UptimeRobot ping `/health` 保活）、运行时可写但重启即丢（改费率/汇率要改源文件并重新 `sync:engine`）。
+
+#### 验证配方（实测通过）
+
+```bash
+# 1) 起引擎（本机）：把 AIOSRM++ 的 FastAPI 跑在 18000
+# 2) 起网关：PORT=18001 ENGINE_API_KEY=xxx python deploy/osrm-engine/server.py
+# 3) 起站点：OSRM_API_BASE=http://127.0.0.1:18001 OSRM_ENGINE_KEY=xxx node dist/server.cjs
+# 4) 接口层与网关（脚本均已入库，参数可用 argv 覆盖）
+python scripts/probe-quote-api.py            # 区间算法 = 售价±10% + 内部字段零泄漏 + 三条错误分支
+python scripts/probe-engine-gateway.py       # 端点白名单全 404 + 无密钥/错密钥 401 + 最小数据目录仍可算
+python scripts/probe-calc-ui.py              # 三语：填表→结果四格+区间+一键带到询价表单
+#    ⚠️ 探针脚本必须入库（scripts/），别放临时目录——临时目录会被清理，文档里的命令就失效了
+```
+
+**踩过的坑（探针报「表单提交 HTTP None / 拦截 0 个响应」时先查这个）**：测算表单最初复用了
+`.jx-form-grid` / `.jx-submit` 两个既有类名，而 `verify-agent-page.py` 是按这两个类名取元素的
+——它先命中测算表单，于是询价表单的必填项没被填上，浏览器原生校验拦住提交，请求根本没发出去。
+看着像接口故障，实为类名撞车。规矩：**新表单/按钮用独立类名**（`.jx-calc-form` / `.jx-calc-grid` /
+`.jx-calc-submit`），验收脚本里的选择器一律用 `#consult .jx-consult` 作用域化。
+
+---
+
+## 15. 相关文档
 
 | 文档 | 用途 |
 |---|---|
 | [`AGENTS.md`](AGENTS.md) | 给 AI 编码 agent 的项目上下文与踩坑记录 |
 | [`DEPLOY.md`](DEPLOY.md) | Render 部署操作手册（逐步命令） |
+| [`AI-ASSET-PROMPTS.md`](AI-ASSET-PROMPTS.md) | /ai 页配图/动效的规格与生成提示词表 |
 | [`design-system/jiuneng-logistics/MASTER.md`](design-system/jiuneng-logistics/MASTER.md) | 品牌视觉规范（唯一事实来源） |
 | `metadata.json` | AI Studio 元数据 |
 
 ---
 
-*最后更新：v0.5 升级（设计系统重构 + SEO + 性能优化）*
+*最后更新：v0.5 升级（设计系统重构 + SEO + 性能优化）；2026-09 新增 /ai 物流 AI 智能体页*

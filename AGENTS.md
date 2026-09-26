@@ -47,7 +47,10 @@ npm run lint         # tsc --noEmit 类型检查
 4. 免费层实例 15 分钟无请求即**休眠** → 第一个请求会 404/超时(唤醒 5-15s),这是免费层特性,**不是代码 bug**;配 UptimeRobot 每 5 分钟 ping `/api/health` 保活
 5. 验证:`curl https://<service>.onrender.com/api/health` 返回 `{"status":"ok",...}`
 
-## 常见坑(已经踩过,别再踩)
+## 常见坑（已经踩过，别再踩）
+
+- **`/ai` 智能体页的素材槽**：`src/agent/assets.manifest.json` 由 `npm run assets:scan` 从 `public/assets/agent/` 生成（构建时打进包），页面按清单渲染。**不要改成写死图片路径**——素材没到位会 404/破图；改成清单后缺失即自动回落到纯文字版式。素材命名与规格见 `AI-ASSET-PROMPTS.md`（动效 = 透明底循环 MP4 + 同名 PNG 首帧，reduce 动效偏好下只用 PNG）
+- **`/ai` 页的验收脚本是 `scripts/verify-agent-page.py`**（六档视口 + 汉堡菜单 + 标签切换 + 轮播 + hero→表单预填 + 表单→API 成功/失败两条分支 + 全页亮度扫描）。`verify-layout.py` 的探针是旧首页的类名，对 /ai 恒返回 None，别用它判断 /ai
 
 - **NODE_ENV**:Render 需要显式设 `NODE_ENV=production`,否则 server.ts 走 Vite 中间件模式(dev 模式),生产静态文件不生效
 - **构建产物**:`npm run build` 同时产出前端静态文件 + `dist/server.cjs`,两者缺一不可;`npm start` 只认 dist/
