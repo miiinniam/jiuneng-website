@@ -255,10 +255,31 @@ def pid_on(port):
     return None
 
 
+# PowerShell 输出编码必须显式设成 UTF8：本机控制台代码页是 GBK，不设的话 PowerShell 会把中文
+# 按 GBK 写出，被我们按 utf-8 解 → 中文路径变乱码（`...\01_ҵ��\...`）→ 含中文的绝对路径强标识
+# **永不命中**，强身份判据静默退化成「弱标识 + 端口自证」。实测：加前缀前 `frag in cmd` = False、
+# 加后 = True（`scripts/serve-stack.mjs`、`scripts/verify-stack.py` 同样处理）。
+PS_UTF8 = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
+
+
+def ps_codec_selfcheck():
+    """PowerShell 输出编码自检 → (ok, 实得值)。**有判别力**：少了 PS_UTF8 前缀必失败。
+
+    直接让 PowerShell 回一个中文串再比回来 —— 这正是 proc_info 读 CommandLine 走的那条路。
+    删掉 PS_UTF8（或 PowerShell 换了默认代码页）时，本检查会当场变红，而不是等 kill_port
+    里含中文的强标识悄悄不命中、由「弱标识 + 端口自证」兜住（行为看起来正常，保险层却是空的）。
+    """
+    probe = "玖能-编码自检"
+    p = run_cmd(["powershell", "-NoProfile", "-Command",
+                 f"{PS_UTF8}Write-Output '{probe}'"], 20, label="powershell 编码自检")
+    got = (p.stdout.decode("utf-8", "replace").strip() if p is not None else "")
+    return got == probe, got
+
+
 def proc_info(pid):
     """→ (Name, CommandLine)。进程已退出则返回 ("", "")。"""
     p = run_cmd(["powershell", "-NoProfile", "-Command",
-                 f"Get-CimInstance Win32_Process -Filter 'ProcessId={pid}' | "
+                 f"{PS_UTF8}Get-CimInstance Win32_Process -Filter 'ProcessId={pid}' | "
                  f"Select-Object Name,CommandLine | ConvertTo-Json -Compress"],
                 20, label=f"powershell Get-CimInstance ProcessId={pid}")
     if p is None:
@@ -853,6 +874,16 @@ if not IS_REPO_ROOT:
     print(f"           {os.path.abspath(os.path.join(os.path.abspath(ENGINE_CWD), 'run_server.py'))}")
     print("       ⇒ 线上服务会被**副本进程**顶替（身份/代码版本不等价），且「恢复」只是新进程，不是还原原进程。")
     print("       要跑真仓库，请用仓库根的 scripts/verify-health.py。\n")
+
+# ── ⓪ PowerShell 输出编码自检（proc_info 的强身份判据依赖它）──────────────
+print("⓪ PowerShell 输出编码自检（proc_info 读 CommandLine 的强身份判据依赖它）")
+_codec_ok, _codec_got = ps_codec_selfcheck()
+print(f"   {'✓' if _codec_ok else '✗'} PowerShell 中文输出可原样解回"
+      f"（期望 '玖能-编码自检'，实际 {_codec_got!r}）")
+if not _codec_ok:
+    fails.append("PowerShell 输出编码自检失败：proc_info 读回的 CommandLine 里中文会变乱码 → "
+                 "含中文的绝对路径强标识永不命中（强身份判据退化成死码，只剩弱标识 + 端口自证）；"
+                 "检查 PS_UTF8 前缀是否还在")
 
 # ── ① 轻量档 ───────────────────────────────────────────────────────────
 t0 = time.time()
