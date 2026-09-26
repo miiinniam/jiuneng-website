@@ -22,6 +22,10 @@ services:
     plan: free
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
+    # 自定义域名(声明式):Render 会自动签发/续期 TLS,并把 HTTP 重定向到 HTTPS。
+    # 对应 DNS:site → jiuneng-website.onrender.com(Godaddy 已配)。根域/www 属 OSRM++ 项目,不在此声明。
+    domains:
+      - site.jiuneng.space
     envVars:
       - key: NODE_ENV
         value: production
