@@ -1026,9 +1026,11 @@ git commit -m "docs: 引擎体检/守护/健康检查用法增补"
 
 **未完成（需业务方面板操作）**：
 
-1. **GoDaddy**：CNAME `site` → `jiuneng-website.onrender.com`（根域/www 禁动）
-2. （建议）UptimeRobot 每 5 分钟 ping `https://site.jiuneng.space/api/health` 保活
-3. ⚠️ **免费层配额**：站点侧 60s 周期探针会把引擎也一直唤醒 → 两个常驻服务按 Render「免费层每工作区 750 实例小时/月」口径会超额（详见渲染文档），需业务方决定：放引擎自然休眠 / 接受月中被暂停 / 升级付费
+1. ~~**GoDaddy**：CNAME `site` → `jiuneng-website.onrender.com`~~ → **已完成 2026-09-26**（助手在 GoDaddy 面板操作）：新增记录 `CNAME | site | jiuneng-website.onrender.com. | 1 小时`，根域 `@ → 216.198.79.1`（Vercel）与 `www → …vercel-dns-017.com`（Vercel）**逐字复核未变** ✓。DNS 实测已传播：`site.jiuneng.space → 216.24.57.18 / .16`（Render 边缘）。
+2. ~~Render Custom Domain~~ → **改用声明式**：`render.yaml` 站点服务加 `domains: [site.jiuneng.space]`（官方 schema 校验通过），Blueprint **Manual sync** 后生效。**`https://site.jiuneng.space/ai` → 200** ✓；TLS = **Google Trust Services WE1 / CN=site.jiuneng.space**（notAfter 2026-12-25）✓；`http://` → **301** 跳 HTTPS ✓；`/` 与 `/api/health` 均 200 ✓；**生产测算打在正式域名上：全部通过 ✅**（区间与基线逐位一致）。
+   - ⚠️ 注意：Render 界面此版本 **Settings 页无 Custom Domains 区块**（全文与 110 项元素清点均无）→ 结论：**用 `render.yaml` 的 `domains` 字段声明**，别在面板里找。
+3. （建议）UptimeRobot 每 5 分钟 ping `https://site.jiuneng.space/api/health` 保活
+4. ⚠️ **免费层配额**：站点侧 60s 周期探针会把引擎也一直唤醒 → 两个常驻服务按 Render「免费层每工作区 750 实例小时/月」口径会超额（用光则当月暂停）；待业务方拍板：让引擎按需休眠（首次测算慢 30–60s）/ 升付费 / 接受月中暂停
 
 **已由助手完成的历史步骤（存档）**：代码入库（`37459a0`/`5484781`/`902b152`/`44ee232`）→ Render 自动部署 → `/ai` 生产复跑 EXIT=0 → 引擎部署件入库（**只带已公开的 4 份数据**，未公开的 `price_versions`/`calibration_samples`/`demand_periods` 进 `.gitignore` + `sync-engine.mjs` 排除表；实测去掉那三份后引擎仍能起 + 真算）→ `render.yaml` 密钥全自动化（`generateValue` + `fromService`，官方 schema 离线校验通过）
 
