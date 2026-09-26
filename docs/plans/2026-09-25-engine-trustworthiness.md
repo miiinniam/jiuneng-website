@@ -1046,6 +1046,17 @@ git commit -m "docs: 引擎体检/守护/健康检查用法增补"
      `probe-quote-api.py` ✓、`verify-engine-audit.py` ✓。
    - 实例小时预估：站点 ≈744h（UptimeRobot 每 5 分钟 ping `/api/health`，**不**碰引擎）+ 引擎按需唤醒
      （每次约 1 分钟，每次部署再 1 次）→ 落在 750h 内。
+   - **配套修复（上线后暴露，2026-09-26 第二笔 `0991397`）**：周期探查一关，`lastProbe` 就没人刷新了 →
+     部署期间引擎**瞬时 502**（实测 496ms 就回 `status_502`）会把 `ok=false` 挂在 `/api/health` 上
+     **几小时**，保活监控会吃**永久假警**。修法三条：
+     ① 陈旧失败**不参与** degraded 判定（窗口 `max(2×探查间隔, HEALTH_STALE_MS 默认 15min)`）；
+     ② `/api/health` 增加自描述字段 `probeMode` / `probeIntervalMs` / `stale`，监控侧能区分
+        「引擎坏了」与「最近没人探过」；
+     ③ **真实测算结果写进健康状态**（`source:'quote'`）—— 有客户在用就自动刷新，保活不必唤醒引擎；
+        只记引擎级失败（timeout/unreachable/error），入参校验类失败（未知城市/缺货重/缺车型）说明引擎活着，不记。
+     验收：`verify-health.py` ⑨C（新鲜失败→degraded；8s 后→ok 且 `stale=true`，`lastProbe.ok` 仍如实为 false）、
+     `verify-quote-timeout.py` F（超时→degraded(quote)；延迟归零→ok(quote)）—— 两个脚本均 EXIT=0。
+     生产实测：`status=ok probeMode=on_demand stale=false`，真算后 `lastProbe={ok:true,ms:953,source:"quote"}`。
 
 **已由助手完成的历史步骤（存档）**：代码入库（`37459a0`/`5484781`/`902b152`/`44ee232`）→ Render 自动部署 → `/ai` 生产复跑 EXIT=0 → 引擎部署件入库（**只带已公开的 4 份数据**，未公开的 `price_versions`/`calibration_samples`/`demand_periods` 进 `.gitignore` + `sync-engine.mjs` 排除表；实测去掉那三份后引擎仍能起 + 真算）→ `render.yaml` 密钥全自动化（`generateValue` + `fromService`，官方 schema 离线校验通过）
 
