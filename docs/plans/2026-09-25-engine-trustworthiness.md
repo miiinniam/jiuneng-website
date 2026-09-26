@@ -972,9 +972,13 @@ git commit -m "docs: 引擎体检/守护/健康检查用法增补"
 4. ✅ **已完成（2026-09-26）** `python scripts/verify-engine-audit.py` → 全绿（含死端口必须非 0 退出）。助手亲跑 `EXIT=0`（52s；死端口 19999 → exit 3 + 「引擎不在，体检无法进行」+ **两份产物字节级未变**；缺 `OSRM_API_BASE` → exit 2 拒绝猜地址）。子 agent 两组变异自证（不可达静默 continue → 红；`tax_comparison.conflict` 写死 false → 红）。产物 `docs/engine-audit/` 含内部成本参数 → **已进 `.gitignore`，绝不入库**（public 仓库）。提交 `070ff2f`。
 
 **T4 附带产出（诊断，不是猜测）**：悬了很久的「税率口径不一致」根因已定位在引擎侧 —— `backend/app/services/border_costs.py:501` 写的是 `tariff.import_duty_rate or _FIXED_FEES[...]["import_duty_fallback_pct"]`，**ACFTA 合法的 `0.0` 被 falsy 判假 → 静默回落 5% 兜底**；而同文件 `:243` 用的是正确的 `... if tariff else ...`。两侧都自称 `duty_source=atiga`。⇒ 这不是「两种业务口径」，是**引擎的 falsy-zero 缺陷**，应反馈 AIOSRM++ 侧修（本轮不改引擎，越界）。
-5. 生产 vs 本机同线路复算有书面对比（或明确标注"前置未完成，未执行"）
-6. `probe-quote-api.py` 与 `verify-agent-page.py` 复跑全绿（无回归）
-7. 体检表已交业务方，作为 A4 输入
+5. ⏸ **前置未完成，未执行（2026-09-26）**：生产侧两处硬阻塞 —— ① 引擎 Render 服务**尚未创建**（`jiuneng-osrm-engine.onrender.com` → 404 + `x-render-routing: no-server`）→ 云上官网必然测算不可用；② `site.jiuneng.space` **DNS 无记录**（权威 NS 返回 NXDOMAIN）。两者都需业务方在面板操作（Render 建引擎服务 + GoDaddy 加 CNAME `site` → `jiuneng-website.onrender.com`）；根域 `jiuneng.space` / `www` 指向 Vercel 上的 OSRM++ 工具，**禁动**。
+6. ✅ **已完成（2026-09-26）** 无回归复跑：
+   - `python scripts/probe-quote-api.py` → **EXIT=0**（4s；拼车 深圳→河内 8t/25m³ → 1028.5 km / 1 车 / 区间 9,300,000–11,300,000 VND + **内部字段零泄漏**；`unknown_origin`/`bad_weight`/`bad_vehicle` 三分支 reason 全对）。
+   - `python scripts/verify-agent-page.py`（六档视口 390/768/1024/1280/1440/1920）→ **EXIT=0**：无横向溢出、`opacity:0` 内容 = 0、汉堡菜单可展开、标签切换（同时仅 1 个 active）、轮播 1/4→2/4（`translateX(0%)`→`-100%`）、hero→表单预填、表单→API **两条分支**（失败分支如实回落文案含新邮箱；成功分支拦截放行后线路结论/单证清单均渲染）。
+   - 亮度扫描补跑（脚本缺 PIL 时会**静默跳过**，按「跳过≠通过」用 `uv run --with pillow` 补做）：@1440px `min=73.2`，<120 的带 `[20,21,22,30,31,32,64]`；@390px `min=97.8`，`[39,87]`。**逐带归因**（两档一致）：`brain`(4000-4600) / `#system`(6000-6600) = 深色平台截图（`system-overview.jpg` 平均亮度 **34.0**、`system-tracking.jpg` **33.3**）套在浅色窗口框里 —— AGENTS.md 已记录的既定模式（待换浅色界面截图）；`cta`(12800-13000 / 390px 17420-17700) = `.jx-cta` 的**深蓝满幅渐变**（`linear-gradient(128deg,#001030,#0040c0 62%,#0b5cd6)`）—— 与 v0.6「全站浅色骨架」相悖，但属 `/ai` 页既有设计、非本切片引入，**是否改浅色待业务方定**。无未归因的暗区。
+   - 该脚本三处短板（已记录，待业务方点头再修）：① 缺 PIL 时**静默跳过**亮度扫描却仍退 0；② `--only widths` 会**静默跳过**截图/亮度段（无任何提示）；③ 亮度数字只打印、**无断言**（"算不算回归"无人判）。
+7. ✅ **已完成（2026-09-26）** 体检表已交业务方（对话内给出完整路径 + 6 条待处理 + 税率不一致的**真根因**：引擎 `border_costs.py:501` 的 falsy-zero 兜底）。**A4 校准输入待业务方提供真实成交价**（费率样本 0 条 → 费率无实测支撑）。
 
 ## 明确不做（YAGNI / 边界）
 
