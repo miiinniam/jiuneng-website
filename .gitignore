@@ -11,3 +11,13 @@ coverage/
 # 本仓库是 **public**（GitHub miiinniam/jiuneng-website）→ 产物只落本地，绝不入库。
 # 对客只能露售价，绝不能露成本模型。脚本/验收/package.json/.gitignore 才入库。
 docs/engine-audit/
+
+# 引擎部署副本（deploy/osrm-engine/data/）中的**未公开业务数据**：
+# 公开的引擎仓库 miiinniam/jiuneng-osrm 里没有这三份，且实测引擎不需要它们也能跑
+# （2026-09-26：去掉后仍能起 + 真算，里程/售价与基线逐位一致）→ 绝不入库。
+deploy/osrm-engine/data/price_versions.json
+deploy/osrm-engine/data/calibration_samples.json
+deploy/osrm-engine/data/demand_periods.json
+
+# 引擎副本里的 Python 缓存
+__pycache__/

@@ -33,6 +33,14 @@ const EXCLUDE_NAMES = new Set([
   'company_info.json',
   'ai_audit.jsonl',
   'quote_counter.json',
+  // ── 业务数据：**尚未公开**（公开的引擎仓库 miiinniam/jiuneng-osrm 里没有这三份），
+  //    绝不允许进入任何外发副本（含本仓库的 deploy/ 与 Render 服务）。
+  //    实测（2026-09-26）：去掉这三份后引擎仍能起且真算 —— 上海→河内 / 20t / flatbed_13m
+  //    → 2243.0265 km、调整后 29.89h、售价 77,400,453 VND，与带全部数据的基线逐位一致；
+  //    /health 200、白名单 404、无密钥 401 均正常。故三者**不属运行必需**。
+  'price_versions.json',      // 历次售价调整记录（9 个版本）
+  'calibration_samples.json', // 真实成交样本
+  'demand_periods.json',      // 旺季价格系数期间（当前 price_factor.active=false）
 ]);
 const EXCLUDE_DIRS = new Set(['__pycache__', '.pytest_cache', '.venv-build', 'venv']);
 
@@ -42,9 +50,6 @@ const DATA_FILES = [
   'fixed_fees.json',         // 固定费用
   'hs_tariff_2026.json',     // 税则（border 计费需要）
   'exchange_rate.json',      // 汇率
-  'demand_periods.json',     // 旺季价格系数
-  'price_versions.json',     // 价格版本
-  'calibration_samples.json',// 标定样本
 ];
 
 function copyTree(srcDir, destDir) {

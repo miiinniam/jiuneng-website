@@ -1,0 +1,89 @@
+{
+  "_description": "玖能国际 DDP 全链路固定费用参数表 — 中国端/越南端分开报价",
+  "_updated": "2026-09-20",
+  "_currency": "RMB (人民币)",
+  "china_side": {
+    "_description": "中国端费用 — 从中国工厂到友谊关口岸",
+    "customs_declaration_per_vehicle": 1500.0,
+    "yard_fee_per_vehicle": 300.0,
+    "unloading_fee_per_vehicle": 800,
+    "transloading_fee_per_vehicle": 1000,
+    "domestic_transport_rate_per_km": 10,
+    "_domestic_transport_note": "中国境内运输参考费率 ¥10/km/车，用户可手动输入实际报价",
+    "unloading_per_vehicle": 800.0,
+    "transloading_per_vehicle": 1000.0
+  },
+  "vietnam_side": {
+    "_description": "越南端费用 — 从友谊关口岸到越南客户",
+    "customs_clearance_per_vehicle": 2500.0,
+    "yard_fee_per_vehicle": 800.0,
+    "inspection_fee_per_container": 370,
+    "detention": {
+      "free_hours": 24,
+      "rate_day1_3_vnd": 3000000,
+      "rate_day4_plus_vnd": 4000000
+    },
+    "heavy_lift": {
+      "_description": "吊装费/大件装卸，按吨分级",
+      "tier_under_5t_per_ton": 500,
+      "tier_5t_20t_per_ton": 800,
+      "tier_over_20t_per_ton": 1000
+    }
+  },
+  "container": {
+    "_description": "集装箱港口费用（越南端，仅海运）",
+    "20gp": {
+      "port_charge": 2600,
+      "customs_clearance": 200,
+      "inspection": 370,
+      "trucking_to_site": 1760,
+      "detention_per_day": 500
+    },
+    "40gp_hq": {
+      "port_charge": 4100,
+      "customs_clearance": 200,
+      "inspection": 370,
+      "trucking_to_site": 1760,
+      "detention_per_day": 500
+    },
+    "40ot": {
+      "port_charge": 4500,
+      "customs_clearance": 200,
+      "inspection": 370,
+      "trucking_to_site": 2850,
+      "detention_per_day": 500
+    },
+    "40fr": {
+      "port_charge": 4500,
+      "customs_clearance": 200,
+      "inspection": 370,
+      "trucking_to_site": 3800,
+      "detention_per_day": 800
+    }
+  },
+  "breakbulk": {
+    "_description": "件杂货港口费用（越南端，仅海运）",
+    "port_charge_per_ton": 26,
+    "customs_clearance_per_ton": 10,
+    "storage_per_ton_per_day": 0.8
+  },
+  "sea_port_dalian": {
+    "_description": "中国端海运港口费（大连港参考）",
+    "unloading_per_ton": 80,
+    "port_misc_per_ton": 70,
+    "customs_per_shipment": 1000,
+    "lifting_heavy_package": 175000,
+    "unlashing_package": 6000,
+    "operation_management_package": 20000
+  },
+  "tax_defaults": {
+    "vat_rate_vn": 0.08,
+    "vat_rate_vn_alt": 0.1,
+    "export_tax_rebate_cn_typical": 0.08,
+    "import_duty_fallback_pct": 0.05
+  },
+  "exchange_rate": {
+    "vnd_per_rmb": 3500,
+    "_note": "VND→RMB 参考汇率，用于越南境内运输费转人民币展示"
+  }
+}
