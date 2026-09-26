@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# 引擎参数体检产物：含内部成本参数（售价公式因子/油价/汇率/口岸费用/税率），
+# 本仓库是 **public**（GitHub miiinniam/jiuneng-website）→ 产物只落本地，绝不入库。
+# 对客只能露售价，绝不能露成本模型。脚本/验收/package.json/.gitignore 才入库。
+docs/engine-audit/
