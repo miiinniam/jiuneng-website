@@ -262,18 +262,47 @@ export async function runQuote(req: CalcRequest): Promise<CalcResult> {
     },
   };
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  /** 单次引擎调用（含自身超时）。 */
+  const attemptEngine = async (): Promise<Response> => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    try {
+      return await fetch(`${base}/route/cost`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(process.env.OSRM_ENGINE_KEY ? { 'X-API-Key': process.env.OSRM_ENGINE_KEY } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  /* 免费层实例休眠时，Render 会**毫秒级**把第一个请求拒掉（502 或直接断连）——这不是「引擎慢」，
+     而是「实例没醒」，75s 预算根本轮不到它。实测冷启动要约 **32s**（/health 200 用时 32.42s）：
+     只有**再发一次**才会真正等到实例醒来。所以只对「快速失败」补一次重试；真正的慢失败
+     （超时）不重试，避免把预算吃两遍。
+     ⚠️ 重试必须留在**本 try 内部**：AbortError 要能被下面的 catch 映射成 engine_timeout，
+     漏出去就成了 server_error（第一次改就踩了这个坑，verify-quote-timeout.py 的 B/C 段钉着）。
+     验收：scripts/verify-quote-timeout.py 的 G 段（假引擎只对第一次请求回 502）。 */
+  const FAST_FAIL_MS = 3_000;
+  let res: Response;
   try {
-    const res = await fetch(`${base}/route/cost`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(process.env.OSRM_ENGINE_KEY ? { 'X-API-Key': process.env.OSRM_ENGINE_KEY } : {}),
-      },
-      body: JSON.stringify(body),
-      signal: ctrl.signal,
-    });
+    const attemptStartedAt = Date.now();
+    try {
+      res = await attemptEngine();
+      if (!res.ok && res.status >= 500 && Date.now() - attemptStartedAt < FAST_FAIL_MS) {
+        console.warn(`osrm engine fast ${res.status}（疑似免费层实例未唤醒），重试一次`);
+        res = await attemptEngine();
+      }
+    } catch (fastError) {
+      if (Date.now() - attemptStartedAt >= FAST_FAIL_MS) throw fastError;
+      console.warn('osrm engine fast failure（疑似免费层实例未唤醒），重试一次：', fastError);
+      res = await attemptEngine();
+    }
     if (!res.ok) {
       // 引擎用 422 + detail 说明校验失败；只映射已知情形，其余保持通用文案（不回传引擎内部信息）
       let clue = '';
@@ -334,7 +363,5 @@ export async function runQuote(req: CalcRequest): Promise<CalcResult> {
         ? '测算引擎响应超时（免费层实例可能正在唤醒），可稍后重试或走正式询价。'
         : '测算引擎连接失败，可引导客户走正式询价。',
     };
-  } finally {
-    clearTimeout(timer);
   }
 }

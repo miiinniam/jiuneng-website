@@ -39,7 +39,7 @@ export type SseEvent =
   | { event: 'tool_start'; data: { name: string; label: string } }
   | { event: 'tool_done'; data: { name: string; ok: boolean; summary: string } }
   | { event: 'error'; data: { message: string } }
-  | { event: 'done'; data: { tools: number; rounds: number } };
+  | { event: 'done'; data: { tools: number; rounds: number; aborted?: boolean } };
 
 type ToolResult = { ok: boolean; summary: string; payload: Record<string, unknown> };
 
@@ -235,7 +235,7 @@ ${langRule}
 
 必须遵守的口径（与官网一致，不得违反）：
 - 你的输出是「初步整理 / 初步评估」，不是报价，也不是时效承诺。
-- 不得承诺或估算清关时效、运费价格、货损率、任何 SLA 数字。客户问价格时：说明官网不对外报价，引导其提交正式询价，由项目经理按项目核算。
+- 不得承诺或估算清关时效、运费价格、货损率、任何 SLA 数字。**你自己不得给任何价格**；但工具 query_route_cost 返回的「参考价区间」**可以原样转达**，且必须同时标注「初步测算，非正式报价」。工具没给数字时不要编，引导客户提交正式询价，由项目经理按项目核算。
 - 越南侧能力一律表述为「通过越南本地合作代理网络」，不得宣称自营报关公司、自营仓储或越南全境直营网点。
 - 不得宣称全程 GPS 追踪或 7×24 小时客服。
 - 能力状态必须如实：已上线的可以介绍，内测中/建设中的必须说明「正在建设 / 内测中」，不得当成已交付。
@@ -472,6 +472,19 @@ export function scriptedModel(steps: ModelEvent[]): ChatModel {
 
 const MAX_ROUNDS = 4;
 
+/**
+ * 兜底文案：模型一个字都没吐出来时用（工具失败后上游断流、空回复、模型抛错）。
+ * 为什么必须有：2026-09-26 线上实测 —— 客户问「上海到河内 20 吨多少钱」，工具调完
+ * 模型第二轮抛错，SSE 只有 tool_start/tool_done 就断了：**0 字正文、连 done 都没有**，
+ * 客户点了发送什么都看不到。宁可出一句诚实的兜底，也绝不静默。
+ * （本函数 + server.ts 的终止事件双保险；scripts/verify-chat-robust.py 的 E1/E2/E4/E5 钉着。）
+ */
+const FALLBACK_TEXT: Record<Lang, string> = {
+  zh: '这次没能把结果整理出来（线路测算引擎可能正在唤醒，通常需要半分钟左右）。请再发一次，或直接把起运地、目的地、货重／体积发我；也可以提交正式询价，由项目经理核算。',
+  vi: 'Lần này chưa tổng hợp được kết quả (hệ thống tính toán tuyến đường có thể đang khởi động, thường mất khoảng nửa phút). Vui lòng gửi lại, hoặc cho tôi điểm đi, điểm đến, trọng lượng/thể tích. Cũng có thể gửi yêu cầu báo giá chính thức để quản lý dự án tính toán.',
+  en: 'I could not put the result together this time (the route engine may be waking up, usually about half a minute). Please send it again, or give me the origin, destination and weight/volume. You can also submit a formal inquiry for a project manager to work out.',
+};
+
 export async function* runAgentChat(opts: {
   history: ChatTurn[];
   model: ChatModel;
@@ -487,38 +500,63 @@ export async function* runAgentChat(opts: {
 
   let rounds = 0;
   let toolCount = 0;
+  let anyText = false;
+  const fallback = FALLBACK_TEXT[lang] ?? FALLBACK_TEXT.zh;
 
-  for (let round = 0; round < MAX_ROUNDS; round++) {
-    rounds = round + 1;
-    const calls: ToolCall[] = [];
-    let streamedText = false;
+  try {
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      rounds = round + 1;
+      const calls: ToolCall[] = [];
+      let streamedText = false;
 
-    for await (const ev of model.stream(contents, { system, tools: AGENT_TOOLS })) {
-      if (ev.text) {
-        streamedText = true;
-        yield { event: 'text', data: { content: ev.text } };
+      for await (const ev of model.stream(contents, { system, tools: AGENT_TOOLS })) {
+        if (ev.text) {
+          streamedText = true;
+          anyText = true;
+          yield { event: 'text', data: { content: ev.text } };
+        }
+        if (ev.calls?.length) calls.push(...ev.calls);
       }
-      if (ev.calls?.length) calls.push(...ev.calls);
-    }
 
-    if (!calls.length) {
-      if (!streamedText) {
-        yield { event: 'error', data: { message: agentI18n[lang]?.chat?.emptyReply ?? 'empty reply' } };
+      if (!calls.length) {
+        if (!streamedText) {
+          yield { event: 'error', data: { message: agentI18n[lang]?.chat?.emptyReply ?? 'empty reply' } };
+        }
+        break;
       }
-      break;
-    }
 
-    contents.push({ role: 'model', parts: calls.map((c) => ({ functionCall: { name: c.name, args: c.args } })) });
+      contents.push({ role: 'model', parts: calls.map((c) => ({ functionCall: { name: c.name, args: c.args } })) });
 
-    const responses: unknown[] = [];
-    for (const call of calls) {
-      toolCount += 1;
-      yield { event: 'tool_start', data: { name: call.name, label: toolLabel(call.name, lang) } };
-      const result = await executeTool(call.name, call.args ?? {}, lang);
-      yield { event: 'tool_done', data: { name: call.name, ok: result.ok, summary: result.summary } };
-      responses.push({ functionResponse: { name: call.name, response: result.payload } });
+      const responses: unknown[] = [];
+      for (const call of calls) {
+        toolCount += 1;
+        yield { event: 'tool_start', data: { name: call.name, label: toolLabel(call.name, lang) } };
+        const result = await executeTool(call.name, call.args ?? {}, lang);
+        yield { event: 'tool_done', data: { name: call.name, ok: result.ok, summary: result.summary } };
+        responses.push({ functionResponse: { name: call.name, response: result.payload } });
+      }
+      contents.push({ role: 'user', parts: responses });
     }
-    contents.push({ role: 'user', parts: responses });
+  } catch (error: any) {
+    // 模型调用中途抛错（上游 4xx/断流、换 provider 的适配器异常等）。
+    // 分两种情况，不能一刀切：
+    //  ① 还没发出任何事件（典型：主模型密钥无效/欠费、接口 4xx）→ **原样抛出**，
+    //     交给 server.ts 走「DeepSeek 失败 → 回退 Gemini」链路（回退必须可追溯，验收 B 段钉着）。
+    //  ② 已经吐过工具/正文事件（线上事故形态：工具跑完、第 2 轮模型挂掉）→ 不能再换模型重放
+    //     （客户会看到两段自相矛盾的话），必须**就地收尾**：补兜底正文 + done，绝不静默。
+    if (!anyText && toolCount === 0) throw error;
+    console.error('[agent-chat] 编排中断（已吐出事件，就地收尾）：', error);
+    if (!anyText) {
+      anyText = true;
+      yield { event: 'text', data: { content: fallback } };
+    }
+    yield { event: 'done', data: { tools: toolCount, rounds, aborted: true } };
+    return;
+  }
+
+  if (!anyText) {
+    // 工具跑了但模型一个字没回（线上真出现过）：补一句诚实的兜底，保证客户端一定拿到正文 + done。
+    yield { event: 'text', data: { content: fallback } };
   }
 
   yield { event: 'done', data: { tools: toolCount, rounds } };

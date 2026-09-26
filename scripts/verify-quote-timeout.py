@@ -16,6 +16,10 @@ engine_timeout，客户白等还拿不到结果；预算被配错（非法值 / 
   E =abc（非法）→ 回落默认 75s 且 stderr 打出被拒原值；延迟 5s → ok:true
     （行为上证明回落到了**长**预算，而不是 0/1ms）
 
+  G 引擎**冷启动瞬时 502**（第一个 /route/cost 回 502、第二个正常）→ 必须自动重试一次：
+    ok:true 且引擎被请求 ≥2 次（当前实现不重试 → 会把活引擎报成 engine_error）
+    （追加段；脚本里 F 已被下面「真实测算刷新健康状态」占用，故编号顺延为 G。A–E 行为不变。）
+
 另外每个 ok:true 的响应都回归**白名单**：假引擎故意混入 breakdown / profit_vnd / margin_rate /
 border_fees / geometry，官网一个都不许漏出来。
 
@@ -119,6 +123,68 @@ def start_fake_engine(delay_s: float):
     return srv, thread, port
 
 
+class FakeEngine502Once(BaseHTTPRequestHandler):
+    """引擎**冷启动瞬时 502** 的假引擎：把 /route/cost 的**第一次**请求回 502，之后回合法 payload。
+
+    为什么要有它：引擎按需唤醒（Render 免费层休眠）时，第一个请求偶尔先吃一个 5xx
+    （实例正在拉起 / 网关在换后端），紧接着就能正常服务。当前实现把任何非 2xx 都判成
+    engine_error 直接回客户 —— 客户第一次点「测算」看到「引擎暂时不可用」就走了，
+    其实同一份请求再打一次就成。本段断言「瞬时 5xx 必须自动重试一次」。
+
+    ⚠️ 502 由 `pending_502` 显式**武装**，不是「第 1 次请求无条件 502」：站点启动自检 /
+    体检探测若先打过来，会白白消耗掉那次 502，让断言变成假绿（hits 计数同理，只数武装之后的）。
+    """
+
+    hits = 0                       # 武装之后的 POST /route/cost 次数（GET /health 不计数）
+    pending_502 = False
+
+    def _send(self, obj: dict, code: int = 200) -> None:
+        raw = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def do_GET(self):                          # /health：永远正常
+        self._send({"status": "ok"})
+
+    def do_POST(self):
+        type(self).hits += 1
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        if type(self).pending_502:
+            type(self).pending_502 = False
+            self._send({"detail": "fake cold-start 502 (instance waking up)"}, code=502)
+            return
+        self._send({                            # ↓ 与 FakeEngine 同形状的合法 payload
+            "price_vnd": FAKE_PRICE,
+            "route": {"distance_km": 2243.0265, "adjusted_duration_h": 29.89},
+            "vehicle_count": 1,
+            "profile_honored": True,
+            "suggestions": [{"code": "ok_note"}],
+            "breakdown": {"fuel": 1},
+            "profit_vnd": 999,
+            "margin_rate": 0.2,
+            "border_fees": {"x": 1},
+            "geometry": "SECRET",
+            "cost_distance": 1,
+        })
+
+    def log_message(self, *args):
+        pass
+
+
+def start_fake_engine_502_once():
+    port = pick_port()
+    FakeEngine502Once.hits = 0
+    FakeEngine502Once.pending_502 = True        # 武装：下一次 /route/cost 回 502
+    srv = ThreadingHTTPServer(("127.0.0.1", port), FakeEngine502Once)
+    srv.daemon_threads = True
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    return srv, thread, port
+
+
 def start_site(engine_port: int, extra_env: dict):
     """起官网并等 /api/health 200。→ (proc, port, err_path) 或 (None, None, None)"""
     port = pick_port()
@@ -171,11 +237,15 @@ def curl(url: str, timeout_s: float, want_code: bool = False):
     return out.stdout.decode("utf-8", "replace")
 
 
-def post_quote(site_port: int, timeout_s: float):
-    """POST /api/osrm-quote（--data-binary @- 避免中文被 MSYS 弄乱）→ (elapsed, code, body_dict|None, raw)"""
-    payload = {"origin": "上海", "destination": "河内", "border": "友谊关口岸",
-               "weight_kg": 20000, "volume_m3": 60,
-               "mode": "full_truck", "vehicle_model_id": "flatbed_13m"}
+def post_quote(site_port: int, timeout_s: float, payload: dict | None = None):
+    """POST /api/osrm-quote（--data-binary @- 避免中文被 MSYS 弄乱）→ (elapsed, code, body_dict|None, raw)
+
+    payload 缺省 = A–E 段一直用的那份上海→河内整车请求；G 段会传入南宁→河内的整车请求。
+    """
+    if payload is None:
+        payload = {"origin": "上海", "destination": "河内", "border": "友谊关口岸",
+                   "weight_kg": 20000, "volume_m3": 60,
+                   "mode": "full_truck", "vehicle_model_id": "flatbed_13m"}
     t0 = time.monotonic()
     try:
         out = subprocess.run(
@@ -392,6 +462,45 @@ def main() -> int:
                 fails.append(f"F：引擎恢复后 status 应为 ok，实际 {hb2.get('status')!r}")
             if not [f for f in fails if f.startswith("F：")]:
                 print("   ✓ 真实测算会刷新健康状态：超时→degraded(quote)，成功→ok(quote)")
+    finally:
+        stop(proc, srv, thread)
+
+    # ── G 引擎冷启动「瞬时 502」：必须自动重试一次（追加段；F 已被上面的健康刷新段占用，编号顺延）──
+    # 线上形态：引擎休眠时第一个请求先吃一个 5xx，紧接着就正常。当前实现非 2xx 直接判 engine_error
+    # 回客户 → 客户第一次点「测算」看到「引擎暂时不可用」，其实同一份请求再打一次就成。
+    print("\nG 引擎瞬时 502（冷启动）：官网必须自动重试一次，别把活引擎报成 engine_error")
+    srv = thread = proc = None
+    try:
+        srv, thread, eport = start_fake_engine_502_once()
+        proc, sport, err = start_site(eport, {"OSRM_QUOTE_TIMEOUT_MS": None, "HEALTH_PROBE_MS": "0"})
+        if proc:
+            # 武装之后才开始算：下一次 /route/cost 回 502，再下一次正常
+            FakeEngine502Once.hits = 0
+            FakeEngine502Once.pending_502 = True
+            nn_payload = {"origin": "南宁", "destination": "河内", "border": "友谊关口岸",
+                          "weight_kg": 20000, "mode": "full_truck",
+                          "vehicle_model_id": "flatbed_13m"}
+            elapsed, code, body, raw = post_quote(sport, 60, nn_payload)
+            hits = FakeEngine502Once.hits
+            print(f"   → HTTP {code}，耗时 {elapsed:.1f}s，ok={(body or {}).get('ok')!r} "
+                  f"reason={(body or {}).get('reason')!r}")
+            print(f"   → 假引擎 /route/cost 命中 {hits} 次（首次被武装为 502）")
+            print(f"   → 响应：{json.dumps(body, ensure_ascii=False)[:240] if body else raw[:240]}")
+            if hits < 2:
+                fails.append(f"G：引擎只被请求 {hits} 次 —— 瞬时 502 没有触发重试"
+                             f"（客户第一次点测算就吃瘪，其实再打一次就好）")
+            if (body or {}).get("ok") is not True:
+                fails.append(f"G：首次 502、第二次正常时测算应 ok:true（重试生效），"
+                             f"实际 ok={(body or {}).get('ok')!r} reason={(body or {}).get('reason')!r}")
+            else:
+                if body.get("price_min_vnd") != EXPECT_MIN or body.get("price_max_vnd") != EXPECT_MAX:
+                    fails.append(f"G：重试后的区间不对：{body.get('price_min_vnd')}/{body.get('price_max_vnd')}，"
+                                 f"应为 {EXPECT_MIN}/{EXPECT_MAX}（售价 ±10% 取整到 10 万）")
+                if body.get("distance_km") != 2243.0:
+                    fails.append(f"G：重试后的里程应为 2243.0，实际 {body.get('distance_km')!r}")
+            leak_check(raw, "G")
+            if not [f for f in fails if f.startswith("G：")]:
+                print(f"   ✓ 瞬时 502 自动重试成功：引擎被请求 {hits} 次，客户拿到正常结果")
     finally:
         stop(proc, srv, thread)
 

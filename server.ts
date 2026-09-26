@@ -436,28 +436,39 @@ app.post('/api/agent-chat', async (req: Request, res: Response) => {
       await pump(demo);
     } else if (!plan) {
       console.error('[agent-chat] 未配置任何模型密钥（DEEPSEEK_API_KEY / GEMINI_API_KEY）');
-      if (!closed) res.write(sseFormat({ event: 'error', data: { message: agentI18n[lang].chat.error } }));
+      if (!closed) {
+        res.write(sseFormat({ event: 'error', data: { message: agentI18n[lang].chat.error } }));
+        res.write(sseFormat({ event: 'done', data: { tools: 0, rounds: 0, aborted: true } }));
+      }
     } else {
       try {
         await pump(plan.primary.model);
       } catch (primaryError: any) {
         const reason = String(primaryError?.message ?? primaryError);
+        /* ⚠️ 任何失败路径都必须给客户端「终止事件」（error + done）。2026-09-26 线上就是在这里
+           静默断流的：已吐过 tool_start/tool_done、模型第二轮抛错 → 原代码只打日志、不写事件 →
+           客户 0 字正文、连 done 都没有，「思考中」永远不结束。验收 E2/E5 钉着这条。 */
+        const failOut = () => {
+          if (closed) return;
+          res.write(sseFormat({ event: 'error', data: { message: agentI18n[lang].chat.error } }));
+          res.write(sseFormat({ event: 'done', data: { tools: 0, rounds: 0, aborted: true } }));
+        };
         if (produced) {
           console.error('[agent-chat] 流中途失败（已吐出内容，不再回退）：', primaryError);
+          failOut();
         } else if (plan.fallback) {
           console.warn(`[agent-chat] ${plan.primary.label} 调用失败，回退 ${plan.fallback.label}：${reason}`);
           try {
             await pump(plan.fallback.model);
           } catch (fallbackError: any) {
             console.error(`[agent-chat] 回退 ${plan.fallback.label} 也失败：`, fallbackError);
+            failOut();
           }
         } else {
           // 这条日志同时点出 DeepSeek 与 Gemini：回退这件事必须可追溯（验收 B 段钉着）
           console.error(`[agent-chat] ${plan.primary.label} 调用失败，且没有可回退的 Gemini`
             + `（未配 GEMINI_API_KEY 或已用 CHAT_PROVIDER 强制指定）：${reason}`);
-        }
-        if (!produced && !closed) {
-          res.write(sseFormat({ event: 'error', data: { message: agentI18n[lang].chat.error } }));
+          failOut();
         }
       }
     }
@@ -465,6 +476,7 @@ app.post('/api/agent-chat', async (req: Request, res: Response) => {
     console.error('agent-chat failed:', error);
     if (!closed) {
       res.write(sseFormat({ event: 'error', data: { message: agentI18n[lang].chat.error } }));
+      res.write(sseFormat({ event: 'done', data: { tools: 0, rounds: 0, aborted: true } }));
     }
   } finally {
     res.end();
@@ -558,23 +570,62 @@ if (process.env.AGENT_CHAT_SELFTEST === '1') {
       ? req.body.question
       : '友谊关到河内，25 吨设备用什么车？';
 
-    const steps: ModelEvent[] = scenario === 'info'
-      ? [
-          { calls: [{ name: 'lookup_service_info', args: { topic: 'service' } }] },
-          { text: '(selftest) 站内能力清单已取到。' },
-        ]
-      : [
-          { calls: [{ name: 'query_route_cost', args: { origin: '南宁', destination: '河内', border: '友谊关口岸', weight_kg: 20000, mode: 'full_truck', vehicle_model_id: 'flatbed_13m' } }] },
-          { text: '(selftest) 线路测算已完成。' },
-        ];
+    // 线路参数与 route 脚本同一份：真实工具会打到 OSRM++（或验收脚本的假引擎）
+    const routeArgs: Record<string, unknown> = {
+      origin: '南宁', destination: '河内', border: '友谊关口岸',
+      weight_kg: 20000, mode: 'full_truck', vehicle_model_id: 'flatbed_13m',
+    };
+
+    // 两个**模型异常**场景（钉住「静默」这类线上事故，见 scripts/verify-chat-robust.py）：
+    //   empty：模型一个事件都不吐（连工具都不调）→ 客户端必须仍收到兜底正文 + done；
+    //   abort：先吐一个工具调用（真工具会跑完），**第二次被调用时抛错** —— 复现线上
+    //          「tool_start/tool_done 之后模型挂掉 → 0 字正文、连 done 都没有」。
+    // ⚠️ abort 不能用 scriptedModel：它按脚本逐次吐事件，表达不了「抛错」这个动作，
+    //    所以这里内联一个 ChatModel，用游标计数（第 1 次给工具调用，第 2 次抛错）。
+    let model: ChatModel;
+    if (scenario === 'empty') {
+      model = scriptedModel([]);
+    } else if (scenario === 'abort') {
+      let cursor = 0;
+      model = {
+        async *stream() {
+          cursor += 1;
+          if (cursor === 1) {
+            yield { calls: [{ name: 'query_route_cost', args: routeArgs }] };
+            return;
+          }
+          throw new Error('selftest_abort');
+        },
+      };
+    } else {
+      const steps: ModelEvent[] = scenario === 'info'
+        ? [
+            { calls: [{ name: 'lookup_service_info', args: { topic: 'service' } }] },
+            { text: '(selftest) 站内能力清单已取到。' },
+          ]
+        : [
+            { calls: [{ name: 'query_route_cost', args: routeArgs }] },
+            { text: '(selftest) 线路测算已完成。' },
+          ];
+      model = scriptedModel(steps);
+    }
 
     const events: unknown[] = [];
-    for await (const ev of runAgentChat({
-      history: [{ role: 'user', text: question }],
-      model: scriptedModel(steps),
-      lang,
-    })) {
-      events.push(ev);
+    // ⚠️ 这里**兜住**模型异常（而不是让它冒泡出去）：Express 4 不接管 async 处理器的拒绝
+    //    → unhandledRejection 会直接打死临时站点，验收脚本就只剩「连接被重置」，
+    //    看不到「抛错前其实已经吐了 tool_start/tool_done」。异常如实记进响应；
+    //    断言仍然要求「兜底正文 + done 都在」——缺陷不会被这层兜底掩盖。
+    let modelError: string | null = null;
+    try {
+      for await (const ev of runAgentChat({
+        history: [{ role: 'user', text: question }],
+        model,
+        lang,
+      })) {
+        events.push(ev);
+      }
+    } catch (error: any) {
+      modelError = String(error?.message ?? error);
     }
     res.json({
       scenario,
@@ -582,6 +633,7 @@ if (process.env.AGENT_CHAT_SELFTEST === '1') {
       geminiKeyPresent: Boolean(process.env.GEMINI_API_KEY),
       chatProvider: chatPlanLabel(),
       events,
+      ...(modelError ? { modelError } : {}),
     });
   });
 }
