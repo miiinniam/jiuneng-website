@@ -289,11 +289,13 @@ export async function runQuote(req: CalcRequest): Promise<CalcResult> {
      漏出去就成了 server_error（第一次改就踩了这个坑，verify-quote-timeout.py 的 B/C 段钉着）。
      验收：scripts/verify-quote-timeout.py 的 G 段（假引擎只对第一次请求回 502）。 */
   const FAST_FAIL_MS = 3_000;
-  /* 2026-09-27 线上实测：Render 对休眠实例的第一个请求是**毫秒级 502**，而实例唤醒要约 32s ——
-     只重试一次没用（第 2 次照样秒 502，客户还是拿不到里程和区间）。所以按「快速失败」判据
-     退避重试（2s/4s/8s/16s，累计 ~30s），正好覆盖一次冷启动；75s 预算完全够。
+  /* 2026-09-27 线上实测：Render 对休眠实例的请求是**毫秒级 502**（不是挂住等），
+     而实例唤醒实测 **42.5s**（直连网关 /health → HTTP 200 用时 42.481s；Render 面板自述
+     「delay requests by 50 seconds or more」）。只重试一次没用（第 2 次照样秒 502）。
+     所以按「快速失败」判据退避重试，窗口要**盖过一次冷启动**：4+8+16+24 = 累计 52s，
+     加 5 次尝试本身 ≈ 55s < 75s 预算。这样冷启动后的第一问也能拿到里程和参考价区间。
      真正的慢失败（超时）不重试，交给下面的 catch 映射成 engine_timeout。 */
-  const COLD_START_WAITS = [2_000, 4_000, 8_000, 16_000];
+  const COLD_START_WAITS = [4_000, 8_000, 16_000, 24_000];
   let res: Response | undefined;
   let lastEngineError: unknown = null;
   try {
