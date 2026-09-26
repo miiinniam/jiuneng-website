@@ -289,20 +289,36 @@ export async function runQuote(req: CalcRequest): Promise<CalcResult> {
      漏出去就成了 server_error（第一次改就踩了这个坑，verify-quote-timeout.py 的 B/C 段钉着）。
      验收：scripts/verify-quote-timeout.py 的 G 段（假引擎只对第一次请求回 502）。 */
   const FAST_FAIL_MS = 3_000;
-  let res: Response;
+  /* 2026-09-27 线上实测：Render 对休眠实例的第一个请求是**毫秒级 502**，而实例唤醒要约 32s ——
+     只重试一次没用（第 2 次照样秒 502，客户还是拿不到里程和区间）。所以按「快速失败」判据
+     退避重试（2s/4s/8s/16s，累计 ~30s），正好覆盖一次冷启动；75s 预算完全够。
+     真正的慢失败（超时）不重试，交给下面的 catch 映射成 engine_timeout。 */
+  const COLD_START_WAITS = [2_000, 4_000, 8_000, 16_000];
+  let res: Response | undefined;
+  let lastEngineError: unknown = null;
   try {
-    const attemptStartedAt = Date.now();
-    try {
-      res = await attemptEngine();
-      if (!res.ok && res.status >= 500 && Date.now() - attemptStartedAt < FAST_FAIL_MS) {
-        console.warn(`osrm engine fast ${res.status}（疑似免费层实例未唤醒），重试一次`);
+    for (let attempt = 0; attempt <= COLD_START_WAITS.length; attempt++) {
+      const attemptStartedAt = Date.now();
+      lastEngineError = null;
+      try {
         res = await attemptEngine();
+        // 正常 / 非 5xx / 慢失败 → 都不再重试（慢失败交给外层 catch）
+        if (res.ok || res.status < 500 || Date.now() - attemptStartedAt >= FAST_FAIL_MS) break;
+        console.warn(`osrm engine fast ${res.status}（疑似免费层实例未唤醒），第 ${attempt + 1} 次尝试`);
+      } catch (fastError) {
+        lastEngineError = fastError;
+        // ⚠️ 超时（AbortError）**绝不能重试**：那是「引擎慢」这个合法答案，不是「实例没醒」。
+        // 预算比 FAST_FAIL_MS 小时（例如 OSRM_QUOTE_TIMEOUT_MS=1000）会把超时误判成快速失败，
+        // 退化成一串重试 —— 实测把 1s 预算拖成 35.1s（verify-quote-timeout.py 的 C 段抓出来的）。
+        const aborted = (fastError as { name?: string })?.name === 'AbortError';
+        if (aborted || Date.now() - attemptStartedAt >= FAST_FAIL_MS) throw fastError;
+        console.warn(`osrm engine fast failure（疑似免费层实例未唤醒），第 ${attempt + 1} 次尝试：`, fastError);
       }
-    } catch (fastError) {
-      if (Date.now() - attemptStartedAt >= FAST_FAIL_MS) throw fastError;
-      console.warn('osrm engine fast failure（疑似免费层实例未唤醒），重试一次：', fastError);
-      res = await attemptEngine();
+      if (attempt < COLD_START_WAITS.length) {
+        await new Promise((resolve) => setTimeout(resolve, COLD_START_WAITS[attempt]));
+      }
     }
+    if (!res) throw lastEngineError ?? new Error('engine call failed');
     if (!res.ok) {
       // 引擎用 422 + detail 说明校验失败；只映射已知情形，其余保持通用文案（不回传引擎内部信息）
       let clue = '';
