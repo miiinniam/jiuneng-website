@@ -122,18 +122,48 @@ const PROBE_TIMEOUT_MS = positiveEnvMs('HEALTH_PROBE_TIMEOUT_MS', 5_000, 200);
  * 不得整体为 null（否则「还没探过」和「没这个字段」不可区分）。
  * ok 只允许 boolean | null，绝不用 0/'' 之类拿真值混淆「未知」与「结果」。
  */
-type LastProbe = { ok: boolean | null; at: string | null; ms: number | null; reason?: string };
+/**
+ * 探测结果**来源**：启动自检 / 周期探查 / deep 实时探测 / 真实测算请求。
+ * 为什么要有这个字段：周期探查默认关闭后，lastProbe 可能**很久没更新**（陈旧）——
+ * 运维与监控必须能区分「引擎坏了」和「最近没人探过」，否则会把陈旧状态误读成当前故障。
+ */
+type ProbeSource = 'startup' | 'periodic' | 'deep' | 'quote';
+type LastProbe = { ok: boolean | null; at: string | null; ms: number | null; reason?: string; source?: ProbeSource };
 let lastProbe: LastProbe = { ok: null, at: null, ms: null };
-/** 只在状态跳变时打日志，避免 60s 一条刷屏（运维/告警靠日志看依赖状态）。 */
+/** 只在状态跳变时打日志，避免刷屏（运维/告警靠日志看依赖状态）。 */
 let lastLoggedOk: boolean | null = null;
 
-async function tickProbe(): Promise<void> {
+/**
+ * 「陈旧」判定窗口（ms，可用 HEALTH_STALE_MS 覆盖，默认 15 分钟）：
+ * 超过 max(2×探查间隔, 该窗口) 没更新的结果**不**参与 degraded 判定 —— 否则一次瞬时 502
+ * （Render 免费层实例轮换/部署期间很常见，实测 496ms 就回了 status_502）会让 /api/health
+ * 一直挂着 degraded，保活监控（UptimeRobot）报假警、运维从此不再相信这个端点。
+ */
+const STALE_AFTER_MS = positiveEnvMs('HEALTH_STALE_MS', 900_000, 1_000);
+function probeStale(): boolean {
+  if (!lastProbe.at) return false;
+  const age = Date.now() - Date.parse(lastProbe.at);
+  if (!Number.isFinite(age)) return false;
+  return age > Math.max(2 * PROBE_INTERVAL_MS, STALE_AFTER_MS);
+}
+
+async function tickProbe(source: ProbeSource): Promise<void> {
   const r = await probeEngine(PROBE_TIMEOUT_MS);
-  lastProbe = { ok: r.ok, at: new Date().toISOString(), ms: r.ms, ...(r.reason ? { reason: r.reason } : {}) };
+  lastProbe = { ok: r.ok, at: new Date().toISOString(), ms: r.ms, source, ...(r.reason ? { reason: r.reason } : {}) };
   if (lastLoggedOk === null || lastLoggedOk !== r.ok) {
     lastLoggedOk = r.ok;
-    console.info(`[health] 引擎探测结果变化：${r.ok ? '可达' : '不可达'}（reason=${r.reason ?? 'none'} ms=${r.ms}）`);
+    console.info(`[health] 引擎探测结果变化：${r.ok ? '可达' : '不可达'}（reason=${r.reason ?? 'none'} ms=${r.ms} source=${source}）`);
   }
+}
+
+/**
+ * 真实测算请求的**引擎级**结果也写进探测状态（来源标 quote）。
+ * 按需唤醒下这是最新鲜的健康信号：有客户在用，/api/health 就自动跟着更新，不必为了保活去唤醒引擎。
+ * ⚠️ 只记引擎级失败（engine_timeout/unreachable/error）；入参校验类失败（未知城市/缺货重…）说明引擎活着，
+ *    由调用方按 ok:true 处理，别把「客户填错」记成「引擎故障」。
+ */
+function noteQuoteOutcome(ok: boolean, ms: number, reason?: string): void {
+  lastProbe = { ok, at: new Date().toISOString(), ms, source: 'quote', ...(reason ? { reason } : {}) };
 }
 
 /**
@@ -142,28 +172,36 @@ async function tickProbe(): Promise<void> {
  * ——Node ≥15 默认 unhandledRejection 致命，实测 node 26 下整个进程 exit 1，
  * 官网连同保活端点 /api/health 一起挂掉，监控却看不出原因。
  */
-const tick = (): void => {
-  void tickProbe().catch((e) => console.error('[health] 探针 tick 失败：', e));
+const tick = (source: 'startup' | 'periodic'): void => {
+  void tickProbe(source).catch((e) => console.error('[health] 探针 tick 失败：', e));
 };
 /**
  * 启动时**只**打一次：给 /api/health 一个初值（否则 lastProbe.ok=null 会一直被读成「还没探过」），
  * 顺带让发布后立刻能看出引擎可达性。代价是每次部署唤醒引擎约 1 分钟，可忽略。
  */
-tick();
+tick('startup');
 /**
  * 周期探查**默认不启用**（PROBE_INTERVAL_MS === 0）：否则会把免费层的引擎 24/7 钉在醒着状态，
  * 两个常驻服务 ≈1440 实例小时/月 > 免费额度 750h/月，月中会被暂停**全部**免费服务。
  * 需要常驻探查（本地联调 / 监控曲线）时显式设 HEALTH_PROBE_MS，机制与旧版完全一致。
  * 引擎改由真实请求按需唤醒：休眠时首个测算要等冷启动，由 OSRM_QUOTE_TIMEOUT_MS（默认 75s）兜住。
  */
-if (PROBE_INTERVAL_MS > 0) setInterval(tick, PROBE_INTERVAL_MS).unref?.();
+if (PROBE_INTERVAL_MS > 0) setInterval(() => tick('periodic'), PROBE_INTERVAL_MS).unref?.();
 
 /** 只暴露 host，绝不带路径/查询串（避免把内部路径或密钥泄给监控页面）。 */
-function engineSnapshot(): { configured: boolean; base: string | null; lastProbe: LastProbe } {
+function engineSnapshot(): { configured: boolean; base: string | null; lastProbe: LastProbe; probeMode: 'periodic' | 'on_demand'; probeIntervalMs: number; stale: boolean } {
   const raw = (process.env.OSRM_API_BASE || '').trim();
   let host: string | null = null;
   try { host = raw ? new URL(raw).host : null; } catch { host = null; }
-  return { configured: Boolean(raw), base: host || null, lastProbe };
+  return {
+    configured: Boolean(raw),
+    base: host || null,
+    lastProbe,
+    // 自描述：监控侧看到 probeMode='on_demand' 就知道 lastProbe 可能陈旧，不会把旧失败读成当前故障。
+    probeMode: PROBE_INTERVAL_MS > 0 ? 'periodic' : 'on_demand',
+    probeIntervalMs: PROBE_INTERVAL_MS,
+    stale: probeStale(),
+  };
 }
 
 // 启动即打印一次归一后的实际参数——运维写错 env 时能立刻从日志看出（而不是靠猜频率）
@@ -204,7 +242,10 @@ app.get('/api/health', async (req: Request, res: Response) => {
     const deepStarted = Date.now();
     try {
       const r = await deepProbe();
-      probe = { ok: r.ok, at: r.at, ms: r.ms, ...(r.reason ? { reason: r.reason } : {}) };
+      probe = { ok: r.ok, at: r.at, ms: r.ms, source: 'deep', ...(r.reason ? { reason: r.reason } : {}) };
+      // deep 是**真实探测** → 顺手刷新共享状态，让轻量档也吃到这份新鲜结果
+      // （按需唤醒下若不刷新，下一份「最新信号」要等到客户真的点一次测算）
+      lastProbe = probe;
     } catch (e) {
       // 与后台 tick 同一类风险：express 4 不接管 async 处理器的 rejection，未捕获即进程级致命
       // ms 用**实测耗时**（原先硬编码 0）：0ms 在语义上是「未测量」（not_configured 专用），
@@ -217,7 +258,8 @@ app.get('/api/health', async (req: Request, res: Response) => {
     res.json({
       status: snap.configured && probe.ok === false ? 'degraded' : 'ok',
       time: now,
-      engine: { ...snap, lastProbe: probe },
+      // deep 是**当场**探测 → stale 恒为 false（覆盖快照里那份可能陈旧的标记）
+      engine: { ...snap, lastProbe: probe, stale: false },
     });
     return;
   }
@@ -225,7 +267,10 @@ app.get('/api/health', async (req: Request, res: Response) => {
   // 轻量档：只读后台探针的缓存结果，绝不在这里实时探测（否则保活请求会被拖死）。
   // lastProbe.ok === null 表示首个探针还没回包 → 不判 degraded（status 只有 ok|degraded 两值，
   // 不能因为「未知」把保活端点打红）；「还没探过」由 lastProbe.ok=null 如实表达，不再谎报 ok。
-  const degraded = snap.configured && snap.lastProbe.ok === false;
+  // ⚠️ **陈旧失败也不判 degraded**：按需唤醒下 lastProbe 可能几小时没更新（引擎睡着、没人在用），
+  //    把那时的一次旧失败一直当当前故障，保活监控（UptimeRobot）会永久报假警、运维从此不信这个端点
+  //    （实测：部署期间引擎瞬时 502 → 端点一直挂着 degraded）。新鲜度由 probeMode / stale 自描述。
+  const degraded = snap.configured && snap.lastProbe.ok === false && !snap.stale;
   res.json({ status: degraded ? 'degraded' : 'ok', time: now, engine: snap });
 });
 
@@ -345,7 +390,11 @@ app.post('/api/agent-chat', async (req: Request, res: Response) => {
 // API: OSRM++ 测算（官网唯一出口，浏览器拿不到引擎地址）
 // 出参白名单在 server/osrmQuote.ts 统一重建：只回里程/时长/车数/车型 + 参考价区间（售价 ±10%），
 // 内部成本、利润、毛利率、口岸费用明细一律不出。对客口径：初步测算，非正式报价。
+/** 引擎级失败（≠ 客户填错）：只有这几种说明「引擎本身有问题」，要写进健康状态。 */
+const ENGINE_LEVEL_REASONS = new Set(['engine_timeout', 'engine_unreachable', 'engine_error']);
+
 app.post('/api/osrm-quote', async (req: Request, res: Response) => {
+  const startedAt = Date.now();
   try {
     const result = await runQuote({
       origin: req.body?.origin,
@@ -356,6 +405,15 @@ app.post('/api/osrm-quote', async (req: Request, res: Response) => {
       mode: req.body?.mode,
       vehicle_model_id: req.body?.vehicle_model_id,
     });
+    // 按需唤醒下，**真实流量就是最新鲜的健康信号**：把引擎级结果记进 lastProbe（source='quote'）——
+    // 这样 /api/health 不必为了保活去唤醒引擎，客户一用就自动刷新（否则一次瞬时 502 会挂很久）。
+    // ⚠️ 入参校验类失败（未知城市/缺货重/整车没给车型…）说明引擎**活着**，不记，别把客户填错当引擎故障。
+    const reason = (result as { reason?: string }).reason;
+    if (result.ok) {
+      noteQuoteOutcome(true, Date.now() - startedAt);
+    } else if (reason && ENGINE_LEVEL_REASONS.has(reason)) {
+      noteQuoteOutcome(false, Date.now() - startedAt, reason);
+    }
     res.status(result.ok ? 200 : 200).json(result);
   } catch (error: any) {
     console.error('osrm-quote failed:', error);

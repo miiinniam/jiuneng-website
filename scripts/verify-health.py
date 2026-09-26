@@ -1618,6 +1618,45 @@ else:
         stop_temp_site(_procB)
         stop_fake_dep(_srvB, _thB)
 
+    # ⑨C 陈旧失败**不**判 degraded：否则一次瞬时 502（部署/实例轮换期间常见）会让保活端点永久假警。
+    #     用 HEALTH_STALE_MS=6000 把窗口压小，好在几秒内看到「新鲜→陈旧」的翻转（否则要等 15 分钟）。
+    _procC = None
+    try:
+        _dead_port = free_port()          # 取一个**不监听**的端口当引擎（必然 unreachable）
+        _procC, _siteC, _errC = start_temp_site_ready({
+            "OSRM_API_BASE": f"http://127.0.0.1:{_dead_port}",
+            "HEALTH_PROBE_MS": "0",
+            "HEALTH_STALE_MS": "6000"})
+        if _procC:
+            _c, _b, _r = curl_json(f"http://127.0.0.1:{_siteC}/api/health", 5)
+            _eng = (_b or {}).get("engine") or {}
+            _lp = _eng.get("lastProbe") or {}
+            print(f"   ⑨C 刚启动（引擎不可达）：status={(_b or {}).get('status')!r} stale={_eng.get('stale')!r} "
+                  f"probeMode={_eng.get('probeMode')!r} probeIntervalMs={_eng.get('probeIntervalMs')!r}")
+            if (_b or {}).get("status") != "degraded":
+                fails.append(f"⑨C 新鲜的失败应判 degraded，实际 {(_b or {}).get('status')!r}")
+            if _eng.get("probeMode") != "on_demand":
+                fails.append(f"⑨C 默认配置下 probeMode 应为 'on_demand'，实际 {_eng.get('probeMode')!r}")
+            if _eng.get("probeIntervalMs") != 0:
+                fails.append(f"⑨C 默认配置下 probeIntervalMs 应为 0，实际 {_eng.get('probeIntervalMs')!r}")
+            time.sleep(8.0)
+            _c2, _b2, _r2 = curl_json(f"http://127.0.0.1:{_siteC}/api/health", 5)
+            _eng2 = (_b2 or {}).get("engine") or {}
+            _lp2 = _eng2.get("lastProbe") or {}
+            print(f"        等 8s 后（失败已超 HEALTH_STALE_MS）：status={(_b2 or {}).get('status')!r} "
+                  f"stale={_eng2.get('stale')!r} lastProbe.ok={_lp2.get('ok')!r}")
+            if _eng2.get("stale") is not True:
+                fails.append(f"⑨C 超过 HEALTH_STALE_MS 后 engine.stale 应为 true，实际 {_eng2.get('stale')!r}")
+            if (_b2 or {}).get("status") != "ok":
+                fails.append(f"⑨C 陈旧失败不该再判 degraded（保活监控会永久假警），"
+                             f"实际 {(_b2 or {}).get('status')!r}")
+            if _lp2.get("ok") is not False:
+                fails.append("⑨C lastProbe.ok 应如实保留 false（只放宽 status 判定，不篡改事实）")
+            if not [f for f in fails if f.startswith("⑨C")]:
+                print("        ✓ 新鲜失败→degraded；陈旧后→ok 且 stale=true（事实仍如实保留 ok=false）")
+    finally:
+        stop_temp_site(_procC)
+
 restore_all()      # 幂等：只补回「原本在跑、现在掉了」的端口（正常路径下是空操作）
 print()
 print("（说明：本脚本的「恢复」= 用 start_port 拉起的**新进程**，不是把原进程还原回来 —— "

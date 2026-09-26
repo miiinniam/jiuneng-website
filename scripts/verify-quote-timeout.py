@@ -339,6 +339,62 @@ def main() -> int:
         finally:
             stop(proc, srv, thread)
 
+    # ── F 真实测算也要刷新健康状态（按需唤醒下的新鲜信号）──
+    # 为什么要有这段：周期探查关闭后，lastProbe 只靠启动自检 + 客户真实请求更新；
+    # 若不把真实测算写进状态，/api/health 会长时间停在陈旧结果上（部署期间一次瞬时 502 就能挂几小时）。
+    print("\nF 真实测算结果写进 /api/health（source='quote'）—— 保活不必唤醒引擎，客户一用就刷新")
+    srv = thread = proc = None
+
+    def get_json(url, timeout_s=10):
+        raw = curl(url, timeout_s)
+        try:
+            return json.loads(raw)
+        except (ValueError, json.JSONDecodeError):
+            return None
+
+    try:
+        # ⚠️ 延迟必须**明显大于**预算，否则两条路径同时到期、谁赢看定时器粒度：
+        #    实测延迟 2.0s vs 预算 2000ms 时结果先回（ms=2010 ok=true）→ 断言随机假红。
+        #    这里用 6.0s vs 2000ms，超时是确定的。
+        srv, thread, eport = start_fake_engine(6.0)
+        proc, sport, err = start_site(eport, {"OSRM_QUOTE_TIMEOUT_MS": "2000", "HEALTH_PROBE_MS": "0"})
+        if proc:
+            post_quote(sport, 60)                       # 延迟 6s > 预算 2000ms → 引擎级超时
+            hb = get_json(f"http://127.0.0.1:{sport}/api/health") or {}
+            eng = hb.get("engine") or {}
+            lp = eng.get("lastProbe") or {}
+            print(f"   超时后 → status={hb.get('status')!r} lastProbe.ok={lp.get('ok')!r} source={lp.get('source')!r} "
+                  f"reason={lp.get('reason')!r} stale={eng.get('stale')!r} probeMode={eng.get('probeMode')!r}")
+            if lp.get("source") != "quote":
+                fails.append(f"F：真实测算后 lastProbe.source 应为 'quote'，实际 {lp.get('source')!r}"
+                             f"（健康状态没跟上真实流量）")
+            if lp.get("ok") is not False or lp.get("reason") != "engine_timeout":
+                fails.append(f"F：引擎超时后应记 ok=false/reason=engine_timeout，实际 {lp!r}")
+            if eng.get("stale") is not False:
+                fails.append(f"F：刚发生的失败不该标 stale，实际 {eng.get('stale')!r}")
+            if hb.get("status") != "degraded":
+                fails.append(f"F：新鲜失败应判 degraded，实际 {hb.get('status')!r}")
+            if eng.get("probeMode") != "on_demand":
+                fails.append(f"F：probeMode 应为 on_demand，实际 {eng.get('probeMode')!r}")
+
+            FakeEngine.delay_s = 0.0                    # 让下一次测算转成功
+            elapsed2, code2, body2, _raw2 = post_quote(sport, 60)
+            hb2 = get_json(f"http://127.0.0.1:{sport}/api/health") or {}
+            eng2 = hb2.get("engine") or {}
+            lp2 = eng2.get("lastProbe") or {}
+            print(f"   成功后 → HTTP {code2} ok={(body2 or {}).get('ok')!r} / status={hb2.get('status')!r} "
+                  f"lastProbe.ok={lp2.get('ok')!r} source={lp2.get('source')!r}")
+            if (body2 or {}).get("ok") is not True:
+                fails.append(f"F：延迟归零后测算应成功，实际 {body2!r}")
+            if lp2.get("ok") is not True or lp2.get("source") != "quote":
+                fails.append(f"F：成功测算后应记 ok=true/source='quote'，实际 {lp2!r}")
+            if hb2.get("status") != "ok":
+                fails.append(f"F：引擎恢复后 status 应为 ok，实际 {hb2.get('status')!r}")
+            if not [f for f in fails if f.startswith("F：")]:
+                print("   ✓ 真实测算会刷新健康状态：超时→degraded(quote)，成功→ok(quote)")
+    finally:
+        stop(proc, srv, thread)
+
     # ── 收尾 ──
     print("\n" + "=" * 68)
     if fails:
