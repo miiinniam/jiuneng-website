@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="玖能国际（JIUNENG logistics）是面向中国企业的工程物流平台，聚焦工程物流、进出口报关与国际贸易，以数字化系统管理客户询价到项目交付全过程。"
+      content="玖能国际（JIUNENG logistics）是面向中国企业的工程物流平台，聚焦工程物流、进出口报关与国际贸易，提供线路与运价测算、双边报关费用与车辆匹配工具。"
     />
-    <meta name="theme-color" content="#f8fbff" />
+    <meta name="theme-color" content="#ffffff" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="JIUNENG logistics | 工程物流平台" />
-    <meta property="og:description" content="面向中国企业的工程物流平台，聚焦工程物流、进出口报关与国际贸易。" />
+    <meta property="og:title" content="JIUNENG logistics | 面向中国企业的工程物流平台" />
+    <meta property="og:description" content="工程物流、进出口报关与国际贸易；线路与运价测算、双边报关费用、车辆匹配与超限核查。" />
     <meta property="og:image" content="/assets/og-image.png" />
     <meta property="og:url" content="https://site.jiuneng.space" />
     <meta property="og:site_name" content="JIUNENG logistics" />
@@ -24,15 +24,17 @@
     <meta name="twitter:description" content="面向中国企业的工程物流平台，聚焦工程物流、进出口报关与国际贸易。" />
     <meta name="twitter:image" content="/assets/og-image.png" />
 
-    <!-- Canonical -->
-    <link rel="canonical" href="https://site.jiuneng.space" />
+    <!-- Canonical / hreflang -->
+    <link rel="canonical" href="https://site.jiuneng.space/" />
+    <link rel="alternate" hreflang="zh" href="https://site.jiuneng.space/?lang=zh" />
+    <link rel="alternate" hreflang="vi" href="https://site.jiuneng.space/?lang=vi" />
+    <link rel="alternate" hreflang="en" href="https://site.jiuneng.space/?lang=en" />
+    <link rel="alternate" hreflang="x-default" href="https://site.jiuneng.space/" />
 
-    <!-- Fonts -->
+    <!-- Fonts：Inter（拉丁/数字）+ Noto Sans SC（中文） -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap" media="print" onload="this.media='all'" />
-    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap" /></noscript>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&display=swap" />
 
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="/favicon.png" />
@@ -93,10 +95,10 @@
     }
     </script>
 
-    <title>JIUNENG logistics | 工程物流平台</title>
+    <title>JIUNENG logistics | 面向中国企业的工程物流平台</title>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/site/home.tsx"></script>
   </body>
 </html>

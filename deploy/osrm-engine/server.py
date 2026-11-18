@@ -4,10 +4,16 @@
 为什么不直接把引擎 app 挂上去：
   引擎是给桌面版用的完整后端，暴露着车型库后台（/api/v1/vehicles，role=internal）、
   费率/税则（/api/v1/rates、/border/*）、报价单导出（/quote/export）、AI 代理（/ai/*）等端点。
-  官网只需要一个能力：POST /api/v1/route/cost。所以这里做两件事：
-    1) 端点白名单 —— 只放行 /health 与 /api/v1/route/cost，其余一律 404（不暴露引擎能力面）
-    2) 密钥校验 —— 必须带 X-API-Key 头（值取自环境变量 ENGINE_API_KEY）；未配置密钥时拒绝启动，
-       避免「忘了设密钥」导致引擎裸奔
+  官网只需要三类能力，所以这里做两件事：
+    1) 端点白名单 —— 只放行下表 5 个业务端点，其余一律 404（不暴露引擎能力面）：
+         GET  /health                            （存活探测）
+         POST /api/v1/route/cost                 （线路测算）
+         GET  /api/v1/border/fees-only           （v7：报关区间/分项）
+         POST /api/v1/reference/fit-vehicles     （v7：车辆匹配）
+         GET  /api/v1/reference/exchange-rate    （v7：DDP 折算汇率，拿不到就不给 DDP）
+    2) 密钥校验 —— 除 /health 与 /gateway/health 外**必须**带 X-API-Key 头
+       （值取自环境变量 ENGINE_API_KEY）；未配置密钥时拒绝启动，避免「忘了设密钥」导致引擎裸奔。
+       ⚠️ v7 新放行的三个端点**不进 KEY_FREE**：它们会回业务金额口径，必须带钥。
   另加一层每 IP 每分钟限流，防止被刷。
 
 本文件不修改引擎任何源码，只在其前面包一层 ASGI 中间件。
@@ -27,7 +33,13 @@ sys.path.insert(0, str(HERE / "engine"))
 os.environ.setdefault("OSRM_RESOURCE_DIR", str(HERE))
 
 API_KEY = os.environ.get("ENGINE_API_KEY", "").strip()
-ALLOWED = {("GET", "/health"), ("POST", "/api/v1/route/cost")}
+ALLOWED = {
+    ("GET", "/health"),
+    ("POST", "/api/v1/route/cost"),
+    ("GET", "/api/v1/border/fees-only"),         # v7：报关区间 / 分项明细
+    ("POST", "/api/v1/reference/fit-vehicles"),  # v7：车辆匹配
+    ("GET", "/api/v1/reference/exchange-rate"),  # v7：DDP 汇率（缺失时站点给 null，不猜）
+}
 # Render 健康检查不会带自定义头，所以健康端点免密钥（只回 {"status":"ok"}，不含任何业务信息）
 KEY_FREE = {("GET", "/health"), ("GET", "/gateway/health")}
 RATE_LIMIT_PER_MIN = int(os.environ.get("ENGINE_RATE_LIMIT", "60"))
@@ -84,5 +96,7 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("PORT", "18000"))
-    print(f"[engine-gateway] listening on 0.0.0.0:{port}（仅放行 /health 与 POST /api/v1/route/cost）", flush=True)
+    print(f"[engine-gateway] listening on 0.0.0.0:{port}"
+          f"（放行 {len(ALLOWED)} 个端点：/health、route/cost、border/fees-only、"
+          f"reference/fit-vehicles、reference/exchange-rate）", flush=True)
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")

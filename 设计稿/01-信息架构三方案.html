@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IA 三方案 · JIUNENG 官网 v7</title>
+<style>
+  :root{
+    --paper:#fff; --paper-2:#F4F4F2; --paper-3:#E7E7E3; --paper-4:#D6D6D0;
+    --ink:#001030; --ink-3:#6B7280; --rule:#DCDCD8; --accent:#0040C0; --accent-soft:#DCE5F7;
+    --sans:"Inter","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:transparent;color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding-bottom:8px}
+  h1{font-size:22px;letter-spacing:-.01em;font-weight:600;margin-bottom:6px}
+  .sub{font-size:14px;color:var(--ink-3);line-height:1.6;margin-bottom:26px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:28px}
+  .card{border:1px solid var(--rule);background:var(--paper)}
+  .card-head{display:flex;align-items:baseline;gap:10px;padding:16px 18px;border-bottom:1px solid var(--rule);cursor:pointer}
+  .card-head:hover{background:var(--paper-2)}
+  .tag{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:500}
+  .card-head b{font-size:16px;font-weight:600;letter-spacing:-.01em}
+  .pick{margin-left:auto;font-size:12px;color:var(--accent);border-bottom:1px solid var(--accent);white-space:nowrap}
+
+  /* 1440×810 实比例稿，等比缩到 100% 容器宽 */
+  .stage{position:relative;width:100%;aspect-ratio:1440/810;overflow:hidden;background:var(--paper)}
+  .frame{position:absolute;top:0;left:0;width:1440px;height:810px;transform-origin:top left;background:var(--paper)}
+  .b{background:var(--paper-3)}
+  .b2{background:var(--paper-4)}
+  .ph{background:linear-gradient(135deg,#DCDFE4,#BFC6CF)}
+  .txt{background:var(--paper-4);height:9px}
+  .bb{position:absolute;border:1.5px dashed var(--accent);background:rgba(0,64,192,.05)}
+  .badge{position:absolute;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;
+         font-size:12px;line-height:20px;text-align:center;font-weight:600;z-index:3}
+  .legend{padding:14px 18px;border-top:1px solid var(--rule);font-size:13px;line-height:1.7;color:var(--ink-3)}
+  .legend b{color:var(--ink);font-weight:600}
+  .legend span{display:inline-block;width:18px;height:18px;border-radius:50%;background:var(--accent);color:#fff;
+               font-size:11px;line-height:18px;text-align:center;margin-right:6px;font-weight:600}
+  .note{margin-top:22px;font-size:13px;color:var(--ink-3);line-height:1.7;border-left:2px solid var(--rule);padding-left:12px}
+</style>
+</head>
+<body>
+
+<h1>首页放什么、工具放哪里 —— 三方案</h1>
+<p class="sub">等比例缩小的版面稿（1440×810，按容器宽度等比缩放）。蓝色虚线框＝这次新增的工具入口，<b>点卡片即选</b>。</p>
+
+<div class="grid">
+
+  <!-- ── 方案 A ───────────────────────── -->
+  <div class="card" data-hermes-send="选 IA 方案 A：营销站 + 独立工具舱（导航「平台」进子页，首页只放工具入口条）">
+    <div class="card-head">
+      <span class="tag">方案 A</span><b>营销站 + 独立工具舱</b>
+      <span class="pick">选这个 →</span>
+    </div>
+    <div class="stage"><div class="frame">
+      <div class="b2" style="position:absolute;left:0;top:0;width:1440px;height:72px"></div>
+      <div class="b" style="position:absolute;left:64px;top:30px;width:150px;height:12px"></div>
+      <div class="b" style="position:absolute;left:640px;top:33px;width:60px;height:8px"></div>
+      <div class="b" style="position:absolute;left:720px;top:33px;width:60px;height:8px"></div>
+      <div class="b" style="position:absolute;left:800px;top:33px;width:60px;height:8px"></div>
+      <div class="b" style="position:absolute;left:1290px;top:26px;width:86px;height:22px"></div>
+      <!-- hero -->
+      <div style="position:absolute;left:64px;top:150px;width:560px;height:14px" class="b"></div>
+      <div style="position:absolute;left:64px;top:186px;width:600px;height:52px" class="b2"></div>
+      <div style="position:absolute;left:64px;top:252px;width:520px;height:52px" class="b2"></div>
+      <div style="position:absolute;left:64px;top:330px;width:430px;height:10px" class="b"></div>
+      <div style="position:absolute;left:64px;top:350px;width:380px;height:10px" class="b"></div>
+      <div class="ph" style="position:absolute;left:780px;top:96px;width:660px;height:470px"></div>
+      <!-- 工具入口条 -->
+      <div class="bb" style="left:64px;top:410px;width:660px;height:76px"></div>
+      <div class="badge" style="left:56px;top:402px">1</div>
+      <div class="b" style="position:absolute;left:88px;top:436px;width:120px;height:12px"></div>
+      <div class="b" style="position:absolute;left:250px;top:436px;width:120px;height:12px"></div>
+      <div class="b" style="position:absolute;left:412px;top:436px;width:120px;height:12px"></div>
+      <div class="b" style="position:absolute;left:574px;top:432px;width:120px;height:22px"></div>
+      <!-- 下方营销三段 -->
+      <div style="position:absolute;left:0;top:600px;width:1440px;height:1px" class="b"></div>
+      <div style="position:absolute;left:64px;top:650px;width:380px;height:10px" class="b"></div>
+      <div style="position:absolute;left:64px;top:680px;width:380px;height:70px" class="b"></div>
+      <div style="position:absolute;left:530px;top:650px;width:380px;height:10px" class="b"></div>
+      <div style="position:absolute;left:530px;top:680px;width:380px;height:70px" class="b"></div>
+      <div style="position:absolute;left:996px;top:650px;width:380px;height:10px" class="b"></div>
+      <div style="position:absolute;left:996px;top:680px;width:380px;height:70px" class="b"></div>
+      <!-- 平台下拉 -->
+      <div class="bb" style="left:690px;top:20px;width:180px;height:34px"></div>
+      <div class="badge" style="left:682px;top:12px">2</div>
+    </div></div>
+    <div class="legend"><span>1</span><b>工具入口条</b>：首页中部一排三个入口（测算 / 报关 / AI），点击进子页<br><span>2</span><b>导航「平台」</b>：下拉 → 线路测算 / 报关与税费 / 车辆匹配 / AI 顾问</div>
+  </div>
+
+  <!-- ── 方案 B ───────────────────────── -->
+  <div class="card" data-hermes-send="选 IA 方案 B：首页首屏即工具（左标题 + 右测算表单，工具子页做深）">
+    <div class="card-head">
+      <span class="tag">方案 B</span><b>首页首屏即工具</b>
+      <span class="pick">选这个 →</span>
+    </div>
+    <div class="stage"><div class="frame">
+      <div class="b2" style="position:absolute;left:0;top:0;width:1440px;height:72px"></div>
+      <div class="b" style="position:absolute;left:64px;top:30px;width:150px;height:12px"></div>
+      <div class="b" style="position:absolute;left:560px;top:33px;width:60px;height:8px"></div>
+      <div class="b" style="position:absolute;left:640px;top:33px;width:60px;height:8px"></div>
+      <div class="b" style="position:absolute;left:720px;top:33px;width:60px;height:8px"></div>
+      <div class="b" style="position:absolute;left:800px;top:33px;width:60px;height:8px"></div>
+      <div class="b" style="position:absolute;left:1290px;top:26px;width:86px;height:22px"></div>
+      <!-- 左标题 -->
+      <div style="position:absolute;left:64px;top:156px;width:520px;height:12px" class="b"></div>
+      <div style="position:absolute;left:64px;top:196px;width:560px;height:58px" class="b2"></div>
+      <div style="position:absolute;left:64px;top:266px;width:470px;height:58px" class="b2"></div>
+      <div style="position:absolute;left:64px;top:350px;width:440px;height:10px" class="b"></div>
+      <div style="position:absolute;left:64px;top:370px;width:400px;height:10px" class="b"></div>
+      <div style="position:absolute;left:64px;top:410px;width:150px;height:26px" class="b"></div>
+      <!-- 右：测算卡 -->
+      <div class="bb" style="left:700px;top:120px;width:676px;height:430px;background:#fff"></div>
+      <div class="badge" style="left:692px;top:112px">1</div>
+      <div class="b2" style="position:absolute;left:732px;top:150px;width:180px;height:10px"></div>
+      <div class="b" style="position:absolute;left:732px;top:190px;width:610px;height:38px"></div>
+      <div class="b" style="position:absolute;left:732px;top:244px;width:610px;height:38px"></div>
+      <div class="b" style="position:absolute;left:732px;top:298px;width:290px;height:38px"></div>
+      <div class="b" style="position:absolute;left:1052px;top:298px;width:290px;height:38px"></div>
+      <div class="b2" style="position:absolute;left:732px;top:356px;width:610px;height:46px"></div>
+      <div style="position:absolute;left:732px;top:430px;width:610px;height:1px" class="b"></div>
+      <div style="position:absolute;left:732px;top:452px;width:120px;height:22px" class="b2"></div>
+      <div style="position:absolute;left:880px;top:452px;width:120px;height:22px" class="b2"></div>
+      <div style="position:absolute;left:1028px;top:452px;width:120px;height:22px" class="b2"></div>
+      <div class="bb" style="left:700px;top:576px;width:676px;height:0"></div>
+      <!-- 第二屏：三业务 -->
+      <div style="position:absolute;left:0;top:640px;width:1440px;height:1px" class="b"></div>
+      <div style="position:absolute;left:64px;top:684px;width:300px;height:10px" class="b"></div>
+      <div style="position:absolute;left:64px;top:714px;width:380px;height:60px" class="b"></div>
+      <div style="position:absolute;left:530px;top:684px;width:300px;height:10px" class="b"></div>
+      <div style="position:absolute;left:530px;top:714px;width:380px;height:60px" class="b"></div>
+      <div style="position:absolute;left:996px;top:684px;width:300px;height:10px" class="b"></div>
+      <div style="position:absolute;left:996px;top:714px;width:380px;height:60px" class="b"></div>
+      <!-- AI 悬浮 -->
+      <div class="bb" style="left:1356px;top:722px;width:56px;height:56px;border-radius:28px;background:#fff"></div>
+      <div class="badge" style="left:1408px;top:714px">2</div>
+    </div></div>
+    <div class="legend"><span>1</span><b>首屏右侧测算卡</b>：出发地 / 目的地 / 货物参数 → 立即出里程·时长·区间，留资解锁明细<br><span>2</span><b>AI 顾问常驻</b>：右下悬浮，能直接调测算与报关工具（不是只会聊天的客服）</div>
+  </div>
+
+  <!-- ── 方案 C ───────────────────────── -->
+  <div class="card" data-hermes-send="选 IA 方案 C：工具工作台单页（左导航 + 中间输入 + 右结果，营销站独立）">
+    <div class="card-head">
+      <span class="tag">方案 C</span><b>工具工作台单页</b>
+      <span class="pick">选这个 →</span>
+    </div>
+    <div class="stage"><div class="frame">
+      <div class="b2" style="position:absolute;left:0;top:0;width:1440px;height:72px"></div>
+      <div class="b" style="position:absolute;left:64px;top:30px;width:150px;height:12px"></div>
+      <div class="b" style="position:absolute;left:1290px;top:26px;width:86px;height:22px"></div>
+      <!-- 左侧导航 -->
+      <div style="position:absolute;left:64px;top:120px;width:260px;height:600px" class="b"></div>
+      <div class="b2" style="position:absolute;left:88px;top:160px;width:200px;height:26px"></div>
+      <div class="b" style="position:absolute;left:88px;top:210px;width:180px;height:10px"></div>
+      <div class="b" style="position:absolute;left:88px;top:246px;width:180px;height:10px"></div>
+      <div class="b" style="position:absolute;left:88px;top:282px;width:180px;height:10px"></div>
+      <div class="b" style="position:absolute;left:88px;top:318px;width:180px;height:10px"></div>
+      <!-- 中间输入 -->
+      <div class="bb" style="left:356px;top:120px;width:520px;height:600px;background:#fff"></div>
+      <div class="badge" style="left:348px;top:112px">1</div>
+      <div class="b" style="position:absolute;left:388px;top:164px;width:456px;height:34px"></div>
+      <div class="b" style="position:absolute;left:388px;top:214px;width:456px;height:34px"></div>
+      <div class="b" style="position:absolute;left:388px;top:264px;width:214px;height:34px"></div>
+      <div class="b" style="position:absolute;left:630px;top:264px;width:214px;height:34px"></div>
+      <div class="b" style="position:absolute;left:388px;top:314px;width:456px;height:34px"></div>
+      <div class="b2" style="position:absolute;left:388px;top:372px;width:456px;height:44px"></div>
+      <!-- 右结果 -->
+      <div class="bb" style="left:908px;top:120px;width:468px;height:360px;background:#fff"></div>
+      <div class="badge" style="left:900px;top:112px">2</div>
+      <div class="b2" style="position:absolute;left:940px;top:160px;width:200px;height:36px"></div>
+      <div class="b" style="position:absolute;left:940px;top:212px;width:404px;height:1px"></div>
+      <div class="b" style="position:absolute;left:940px;top:232px;width:300px;height:10px"></div>
+      <div class="b" style="position:absolute;left:940px;top:256px;width:340px;height:10px"></div>
+      <div class="b" style="position:absolute;left:940px;top:280px;width:260px;height:10px"></div>
+      <!-- AI 侧栏 -->
+      <div class="bb" style="left:908px;top:508px;width:468px;height:212px;background:#fff"></div>
+      <div class="badge" style="left:900px;top:500px">3</div>
+      <div class="b" style="position:absolute;left:940px;top:548px;width:300px;height:10px"></div>
+      <div class="b" style="position:absolute;left:940px;top:572px;width:380px;height:10px"></div>
+      <div class="b" style="position:absolute;left:940px;top:640px;width:404px;height:40px"></div>
+    </div></div>
+    <div class="legend"><span>1</span><b>输入区</b>：线路 / 报关 / 车辆三个标签页切换<br><span>2</span><b>结果区</b>：里程、区间、分项（留资后）<br><span>3</span><b>AI 侧栏</b>：常驻对话，能读当前输入</div>
+  </div>
+
+</div>
+
+<p class="note">三案都可用瑞士编辑风的同一套排版。差别只在<b>第一屏让人做什么</b>：A 先讲公司、再给工具；B 先给工具、再讲公司；C 把网站做成了工具台。</p>
+
+<script>
+  function fit(){
+    document.querySelectorAll('.stage').forEach(function(st){
+      var f = st.firstElementChild;
+      var s = st.clientWidth / 1440;
+      if (f) f.style.transform = 'scale(' + s + ')';
+    });
+  }
+  window.addEventListener('resize', fit);
+  if (document.readyState === 'complete') fit(); else window.addEventListener('load', fit);
+  fit();
+</script>
+
+</body>
+</html>

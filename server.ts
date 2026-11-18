@@ -525,6 +525,178 @@ app.get('/api/osrm-quote/places', (_req: Request, res: Response) => {
   });
 });
 
+// ==== v7 API ROUTES START ====
+/* ── v7 工具舱 API（契约 docs/v7-契约与文件归属.md §3，五个端点） ────────────────
+   /api/quote-route    线路测算（代理 runQuote，出参原样透传）
+   /api/customs/range  报关区间（公开，无需留资）
+   /api/lead           留资 → {leadId, token, expiresAt}
+   /api/customs/detail 分项明细（**必须先过令牌**：无 token → 403 lead_required）
+   /api/fleet-match    车辆匹配（白名单出参）
+   规矩：
+   1. 本段只做「参数搬运 + HTTP 状态映射」，算法与剥价全在 server/tools/**（同一份给前端与 AI 用）。
+   2. 成本参数绝不出现在任何响应、日志正文或错误文案里（工具层白名单重建）。
+   3. 模块**懒加载**：本段在文件 imports 之下不能再加顶层 import，且工具层必须在真正被调用时
+      才读 env（本地/测试切环境变量不必重启进程）。 */
+
+type V7Mods = {
+  leads: typeof import('./server/leads');
+  customs: typeof import('./server/tools/customs');
+  fleet: typeof import('./server/tools/fleet');
+  engine: typeof import('./server/tools/engineClient');
+};
+
+let v7ModsPromise: Promise<V7Mods> | null = null;
+
+function v7mods(): Promise<V7Mods> {
+  v7ModsPromise ??= (async () => {
+    const [leads, customs, fleet, engine] = await Promise.all([
+      import('./server/leads'),
+      import('./server/tools/customs'),
+      import('./server/tools/fleet'),
+      import('./server/tools/engineClient'),
+    ]);
+    return { leads, customs, fleet, engine };
+  })();
+  return v7ModsPromise;
+}
+
+/** 客户端来源（Render 在 X-Forwarded-For 里给真 IP；本地直连回落到 socket）。 */
+function v7ClientIp(req: Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  const first = String(raw ?? '').split(',')[0].trim();
+  return first || req.socket?.remoteAddress || 'unknown';
+}
+
+/** 在途合并的 key：字段顺序固定，避免同一请求因键序不同而漏合并。 */
+function v7QuoteKey(body: Record<string, unknown>): string {
+  return ['origin', 'destination', 'border', 'weight_kg', 'volume_m3', 'mode', 'vehicle_model_id']
+    .map((field) => `${field}=${String(body?.[field] ?? '')}`)
+    .join('&');
+}
+
+app.post('/api/quote-route', async (req: Request, res: Response) => {
+  const startedAt = Date.now();
+  try {
+    const { engine } = await v7mods();
+    const request = {
+      origin: req.body?.origin,
+      destination: req.body?.destination,
+      border: req.body?.border,
+      weight_kg: req.body?.weight_kg,
+      volume_m3: req.body?.volume_m3,
+      mode: req.body?.mode,
+      vehicle_model_id: req.body?.vehicle_model_id,
+    };
+    // 单飞：连点/并发同一票只打一次引擎（不缓存结果，价格绝不缓存）
+    const result = await engine.singleFlight(`quote-route:${v7QuoteKey(request)}`, () => runQuote(request));
+    // 与 /api/osrm-quote 同一口径：只有「引擎级失败」才刷新健康状态，客户填错不算引擎故障
+    const reason = (result as { reason?: string }).reason;
+    if (result.ok) {
+      noteQuoteOutcome(true, Date.now() - startedAt);
+    } else if (reason && ENGINE_LEVEL_REASONS.has(reason)) {
+      noteQuoteOutcome(false, Date.now() - startedAt, reason);
+    }
+    res.status(200).json(result);
+  } catch (error: any) {
+    console.error('quote-route failed:', error);
+    res.status(500).json({ ok: false, reason: 'server_error', note: '测算服务暂时不可用，请走正式询价。' });
+  }
+});
+
+app.get('/api/customs/range', async (req: Request, res: Response) => {
+  try {
+    const { customs } = await v7mods();
+    const range = await customs.publicRange(customs.parseCustomsInput(req.query));
+    res.status(200).json(range);
+  } catch (error: any) {
+    console.error('customs-range failed:', error);
+    res.status(200).json({ available: false, note: '测算引擎暂时不可用，请联系项目经理' });
+  }
+});
+
+app.post('/api/lead', async (req: Request, res: Response) => {
+  try {
+    const { leads } = await v7mods();
+    const created = await leads.createLead({
+      company: req.body?.company,
+      contact: req.body?.contact,
+      reach: req.body?.reach,
+      params: req.body?.params,
+      ip: v7ClientIp(req),
+    });
+    res.status(200).json(created);
+  } catch (error: any) {
+    if (error?.code === 'rate_limited') {
+      res.status(429).json({ reason: 'rate_limited' });
+      return;
+    }
+    if (error?.code === 'missing_field') {
+      res.status(400).json({ reason: 'missing_field', ...(error?.field ? { field: error.field } : {}) });
+      return;
+    }
+    console.error('lead failed:', error);
+    res.status(500).json({ reason: 'server_error' });
+  }
+});
+
+app.post('/api/customs/detail', async (req: Request, res: Response) => {
+  try {
+    const { leads, customs } = await v7mods();
+    const leadId = req.body?.leadId;
+    const token = req.body?.token;
+    const params = req.body?.params ?? {};
+    // 不是本站令牌结构 → lead_required（含「压根没给」与 curl 手填的 "y"）
+    if (typeof leadId !== 'string' || !leadId || !leads.readToken(token)) {
+      res.status(403).json({ reason: 'lead_required' });
+      return;
+    }
+    // 本站令牌但签名/leadId/指纹/有效期任一不符 → token_mismatch（不区分是哪一条，不给探测面）
+    if (!leads.redeemToken(token, params, { leadId })) {
+      res.status(403).json({ reason: 'token_mismatch' });
+      return;
+    }
+    const detail = await customs.detail(customs.parseCustomsInput(params));
+    res.status(200).json(detail);
+  } catch (error: any) {
+    const code = typeof error?.code === 'string' ? error.code : '';
+    if (code === 'markup_missing') {
+      res.status(503).json({ reason: 'not_available', note: '线上暂不提供报关费测算，请联系项目经理' });
+      return;
+    }
+    if (code === 'rate_unavailable') {
+      res.status(502).json({ reason: 'rate_unavailable', note: '汇率暂时不可用，请稍后再试' });
+      return;
+    }
+    if (code.startsWith('engine_')) {
+      res.status(502).json({ reason: code, note: '测算服务暂时不可用，请稍后再试或联系项目经理' });
+      return;
+    }
+    console.error('customs-detail failed:', error);
+    res.status(500).json({ reason: 'server_error' });
+  }
+});
+
+app.post('/api/fleet-match', async (req: Request, res: Response) => {
+  try {
+    const { fleet } = await v7mods();
+    const parsed = fleet.parseFleetInput(req.body);
+    // ⚠️ 用 `=== false`（不是 `!parsed.ok`）：tsconfig 未开 strictNullChecks，TS 5.8 的真值判断
+    //    **不收窄**字面量布尔判别式，会报 reason/note 不存在。
+    if (parsed.ok === false) {
+      res.status(400).json({ ok: false, reason: parsed.reason, note: parsed.note });
+      return;
+    }
+    const matched = await fleet.matchFleet(parsed.value);
+    // 引擎级失败也回 200（前端统一看 ok/reason，与 /api/osrm-quote 口径一致）
+    res.status(200).json(matched);
+  } catch (error: any) {
+    console.error('fleet-match failed:', error);
+    res.status(500).json({ ok: false, reason: 'server_error', note: '选车服务暂时不可用，请走正式询价。' });
+  }
+});
+// ==== v7 API ROUTES END ====
+
 // 本地评审用的脚本化模型：只有显式设 AGENT_CHAT_DEMO=1 才生效（生产不设该变量 → 走真 Gemini）。
 // 工具调用是**真的**（会打到真实测算引擎），只有措辞是预置的；回复末尾带本机演示标记，避免评审时被误导。
 const DEMO_REPLY: Record<Lang, { route: string; other: string }> = {
@@ -641,6 +813,30 @@ if (process.env.AGENT_CHAT_SELFTEST === '1') {
 // Serve the AI-agent page (/ai) for both dev and production.
 let viteDev: Awaited<ReturnType<typeof createViteServer>> | null = null;
 
+// v7：多入口页面路由（每个 URL 一个 html 入口，与 /ai 同一机制）
+const PAGES: Record<string, string> = {
+  '/platform': 'platform.html',
+  '/platform/routing': 'platform-routing.html',
+  '/platform/customs': 'platform-customs.html',
+  '/platform/fleet': 'platform-fleet.html',
+  '/platform/assistant': 'platform-assistant.html',
+  '/services': 'services.html',
+  '/projects': 'projects.html',
+  '/about': 'about.html',
+  '/contact': 'contact.html',
+};
+
+async function servePage(res: Response, file: string) {
+  if (process.env.NODE_ENV !== 'production' && viteDev) {
+    const raw = fs.readFileSync(path.join(process.cwd(), file), 'utf-8');
+    const html = await viteDev.transformIndexHtml('/' + file, raw);
+    res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+    return;
+  }
+  res.sendFile(path.join(process.cwd(), 'dist', file));
+}
+
+
 async function serveAgentPage(res: Response) {
   if (process.env.NODE_ENV !== 'production' && viteDev) {
     const raw = fs.readFileSync(path.join(process.cwd(), 'ai.html'), 'utf-8');
@@ -664,10 +860,16 @@ async function setupServer() {
       appType: 'spa',
     });
     app.get(['/ai', '/ai/'], (req: Request, res: Response) => { void serveAgentPage(res); });
+    for (const [route, file] of Object.entries(PAGES)) {
+      app.get([route, `${route}/`], (_req: Request, res: Response) => { void servePage(res, file); });
+    }
     app.use(viteDev.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.get(['/ai', '/ai/'], (req: Request, res: Response) => { void serveAgentPage(res); });
+    for (const [route, file] of Object.entries(PAGES)) {
+      app.get([route, `${route}/`], (_req: Request, res: Response) => { void servePage(res, file); });
+    }
     app.use(express.static(distPath));
     app.get('*', (req: Request, res: Response) => {
       res.sendFile(path.join(distPath, 'index.html'));

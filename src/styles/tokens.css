@@ -1,0 +1,52 @@
+/* v7 设计令牌 —— 瑞士编辑风
+   规则：只改这里，页面不许出现硬编码色值。 */
+:root {
+  /* 纸 */
+  --paper: #ffffff;
+  --paper-2: #f4f4f2;
+  --paper-3: #ededea;
+  /* 墨（品牌 navy 复用为墨色） */
+  --ink: #001030;
+  --ink-2: #2a3348;
+  --ink-3: #6b7280;
+  /* 线 */
+  --rule: #dcdcd8;
+  --rule-strong: #001030;
+  /* 信号（品牌蓝） */
+  --accent: #0040c0;
+  --accent-ink: #00308f;
+  --signal: #2080f8;
+  /* 反色区 */
+  --ink-bg: #001030;
+  --on-ink: #ffffff;
+  --on-ink-2: #a9b4c6;
+
+  /* 字体 */
+  --sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  /* 字阶 */
+  --fs-display: clamp(2.75rem, 6.2vw, 5.5rem);
+  --fs-h1: clamp(2rem, 3.6vw, 3.25rem);
+  --fs-h2: clamp(1.5rem, 2.2vw, 2.25rem);
+  --fs-h3: 1.375rem;
+  --fs-lead: 1.1875rem;
+  --fs-body: 1.0625rem;
+  --fs-small: 0.875rem;
+  --fs-micro: 0.75rem;
+
+  /* 间距（8 的倍数） */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+  --sp-9: 96px;
+  --sp-10: 128px;
+
+  /* 栅格 */
+  --maxw: 1320px;
+  --margin: clamp(20px, 5vw, 72px);
+}

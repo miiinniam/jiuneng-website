@@ -21,3 +21,6 @@ deploy/osrm-engine/data/demand_periods.json
 
 # 引擎副本里的 Python 缓存
 __pycache__/
+
+# v7：留资线索 JSONL（运行时生成，含客户联系方式，绝不入库）
+data/

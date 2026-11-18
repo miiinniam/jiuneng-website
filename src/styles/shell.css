@@ -1,0 +1,255 @@
+/* v7 全站 Shell（顶栏 / 页脚 / 语言切换）。
+   约束：圆角 ≤2px、无阴影、无渐变、悬停不位移。 */
+.jn-skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--ink);
+  color: var(--on-ink);
+  padding: var(--sp-3) var(--sp-4);
+  z-index: 100;
+}
+.jn-skip:focus {
+  left: var(--sp-4);
+  top: var(--sp-4);
+}
+
+/* ── 顶栏 ───────────────────────────── */
+.jn-bar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule);
+}
+.jn-bar-in {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-7);
+  height: 72px;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 var(--margin);
+}
+.jn-mark {
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  font-size: 15px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.jn-mark small {
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+  margin-left: 8px;
+  font-size: 13px;
+  text-transform: none;
+}
+.jn-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  font-size: 15px;
+  color: var(--ink);
+}
+.jn-nav a,
+.jn-nav button {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 6px 0;
+  border-bottom: 1px solid transparent;
+  color: inherit;
+  font-size: 15px;
+}
+.jn-nav a:hover,
+.jn-nav button:hover {
+  border-bottom-color: var(--ink);
+}
+.jn-nav .is-active {
+  border-bottom-color: var(--ink);
+  font-weight: 600;
+}
+.jn-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+}
+.jn-lang {
+  display: flex;
+  gap: var(--sp-3);
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.jn-lang button {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+  padding: 0;
+}
+.jn-lang .on {
+  color: var(--ink);
+  font-weight: 600;
+}
+.jn-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 22px;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.jn-btn:hover {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+}
+.jn-btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.jn-btn-ghost:hover {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.jn-btn-text {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  border-bottom: 1px solid currentColor;
+  border-radius: 0;
+  height: auto;
+  font-size: 14px;
+}
+
+/* 平台下拉 */
+.jn-drop {
+  position: relative;
+}
+.jn-drop-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: -16px;
+  min-width: 232px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: var(--sp-2) 0;
+  display: grid;
+  z-index: 50;
+}
+.jn-drop-panel a {
+  padding: 10px 16px;
+  border: 0;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.jn-drop-panel a:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+/* 汉堡 */
+.jn-burger {
+  display: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 2px;
+}
+.jn-mobile {
+  display: none;
+  border-top: 1px solid var(--rule);
+  padding: var(--sp-4) var(--margin) var(--sp-5);
+  background: var(--paper);
+}
+.jn-mobile a {
+  display: block;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 15px;
+  color: var(--ink);
+}
+
+/* ── 页脚 ───────────────────────────── */
+.jn-foot {
+  background: var(--paper-2);
+  border-top: 1px solid var(--rule);
+  padding: var(--sp-8) 0 var(--sp-6);
+}
+.jn-foot-grid {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 var(--margin);
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: var(--sp-6);
+}
+.jn-foot h4 {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 500;
+  margin-bottom: var(--sp-3);
+}
+.jn-foot ul {
+  list-style: none;
+}
+.jn-foot li {
+  font-size: 14px;
+  color: var(--ink-2);
+  padding: 5px 0;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.jn-foot-legal {
+  max-width: var(--maxw);
+  margin: var(--sp-6) auto 0;
+  padding: var(--sp-4) var(--margin) 0;
+  border-top: 1px solid var(--rule);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+@media (max-width: 980px) {
+  .jn-nav,
+  .jn-lang {
+    display: none;
+  }
+  .jn-burger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .jn-bar-in {
+    gap: var(--sp-3);
+    height: 64px;
+  }
+  .jn-mobile.is-open {
+    display: block;
+  }
+  .jn-foot-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .jn-btn {
+    height: 38px;
+    padding: 0 14px;
+    font-size: 14px;
+  }
+}

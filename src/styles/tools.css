@@ -1,0 +1,831 @@
+/* v7 工具舱样式 —— 只用 tokens.css 变量（无新增色值、无渐变、无阴影、圆角 2px）。
+   字重只用 400 / 500 / 600；悬停只换色与下划线，不做位移或缩放。 */
+
+/* ── 页骨架 ─────────────────────────────────────────────── */
+.t-hero,
+.t-section,
+.t-cross {
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding-inline: var(--margin);
+}
+
+.t-hero {
+  padding-block: var(--sp-8) var(--sp-7);
+  border-bottom: 1px solid var(--rule);
+}
+
+.t-hero .micro {
+  margin-bottom: var(--sp-4);
+}
+
+.t-h1 {
+  font-size: var(--fs-h1);
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  max-width: 24ch;
+}
+
+.t-hero-lead {
+  margin-top: var(--sp-5);
+  font-size: var(--fs-lead);
+  line-height: 1.55;
+  color: var(--ink-2);
+  max-width: 64ch;
+}
+
+.t-hero-foot {
+  margin-top: var(--sp-6);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4) var(--sp-7);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.t-hero-note {
+  font-size: var(--fs-small);
+  color: var(--ink-3);
+  max-width: 48ch;
+  line-height: 1.6;
+}
+
+.t-hero-note a,
+.t-hint a,
+.t-out-foot a {
+  color: var(--accent);
+  border-bottom: 1px solid currentColor;
+}
+
+.t-h2 {
+  font-size: var(--fs-h3);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.t-section {
+  padding-block: var(--sp-8);
+}
+
+/* ── 三句口径 ───────────────────────────────────────────── */
+.t-disclaim {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  font-weight: 500;
+  margin-top: var(--sp-4);
+}
+
+.t-disclaim li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+}
+
+.t-disclaim li::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+}
+
+/* ── 两栏（输入 / 结果） ───────────────────────────────── */
+.t-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--sp-7);
+  align-items: start;
+}
+
+/* ── 表单 ───────────────────────────────────────────────── */
+.t-form {
+  border-top: 2px solid var(--ink);
+  padding-top: var(--sp-4);
+}
+
+.t-form-head,
+.t-out-head {
+  display: flex;
+  gap: var(--sp-4);
+  align-items: baseline;
+  margin-bottom: var(--sp-5);
+}
+
+.t-form-head .micro,
+.t-out-head .micro {
+  flex: none;
+  width: 76px;
+}
+
+.t-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-4) var(--sp-5);
+}
+
+.t-fields-2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.t-span-2 {
+  grid-column: span 2;
+}
+
+.t-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.t-label {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  font-weight: 500;
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.t-opt {
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+.t-input {
+  height: 44px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--fs-body);
+  width: 100%;
+  min-width: 0;
+}
+
+.t-input::placeholder {
+  color: var(--ink-3);
+}
+
+.t-input:hover {
+  border-color: var(--ink-3);
+}
+
+.t-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+
+.t-hint {
+  font-size: var(--fs-small);
+  color: var(--ink-3);
+  line-height: 1.6;
+  margin-top: var(--sp-4);
+}
+
+.t-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  align-items: center;
+  margin-top: var(--sp-5);
+}
+
+.t-busy {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
+/* ── 按钮 ───────────────────────────────────────────────── */
+.t-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 46px;
+  padding: 0 var(--sp-5);
+  background: var(--accent);
+  color: var(--paper);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.t-btn:hover:not(:disabled) {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.t-btn:disabled {
+  background: var(--paper);
+  color: var(--ink-3);
+  border-color: var(--rule);
+  cursor: not-allowed;
+}
+
+.t-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 var(--sp-4);
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.t-btn-ghost:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.t-btn-text {
+  align-self: flex-start;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-top: var(--sp-2);
+  color: var(--accent);
+  border-bottom: 1px solid currentColor;
+  border-radius: 0;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.t-close {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.t-close:hover {
+  border-color: var(--ink);
+}
+
+/* ── 结果区 ─────────────────────────────────────────────── */
+.t-out {
+  border-top: 2px solid var(--ink);
+  padding-top: var(--sp-4);
+  min-height: 280px;
+}
+
+.t-stats {
+  border-top: 1px solid var(--rule);
+  margin-bottom: var(--sp-5);
+}
+
+.t-stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.t-stat dt {
+  font-size: var(--fs-small);
+  color: var(--ink-3);
+  flex: none;
+}
+
+.t-stat dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-body);
+  text-align: right;
+  line-height: 1.45;
+}
+
+.t-num {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.t-num-line {
+  font-weight: 500;
+}
+
+.t-dash {
+  margin: 0 6px;
+  color: var(--ink-3);
+}
+
+.t-unit {
+  color: var(--ink-3);
+  font-size: var(--fs-small);
+}
+
+.t-price {
+  border: 1px solid var(--ink);
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+
+.t-price-label {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.t-price-value {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-h2);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+
+.t-price-note {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-small);
+  color: var(--ink-3);
+  line-height: 1.6;
+}
+
+/* 提示 / 告警 / 错误：没有红色令牌，用品牌蓝竖线 + 字重区分，不新造色值 */
+.t-warn {
+  border-left: 3px solid var(--accent);
+  padding: var(--sp-2) 0 var(--sp-2) var(--sp-3);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  margin: var(--sp-4) 0;
+}
+
+.t-warn-strong {
+  border: 1px solid var(--ink);
+  border-left-width: 3px;
+  padding: var(--sp-4);
+}
+
+.t-warn-strong .t-label {
+  margin-bottom: var(--sp-2);
+}
+
+.t-warn-strong .t-hint {
+  margin-top: var(--sp-2);
+}
+
+.t-ok-line {
+  border-left: 3px solid var(--rule);
+  padding: var(--sp-2) 0 var(--sp-2) var(--sp-3);
+  font-size: var(--fs-small);
+  color: var(--ink);
+  line-height: 1.6;
+  margin: var(--sp-4) 0;
+}
+
+.t-err {
+  border-left: 3px solid var(--accent);
+  padding-left: var(--sp-3);
+  color: var(--ink);
+  font-weight: 500;
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  margin: var(--sp-4) 0;
+}
+
+.t-err-box {
+  border: 1px solid var(--rule);
+  padding: var(--sp-4);
+  margin-top: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  align-items: flex-start;
+}
+
+.t-err-box .t-err {
+  margin: 0;
+}
+
+.t-notes {
+  margin-top: var(--sp-4);
+}
+
+.t-notes .t-label {
+  margin-bottom: var(--sp-2);
+}
+
+.t-list {
+  list-style: none;
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.t-list li {
+  position: relative;
+  padding-left: var(--sp-4);
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+
+.t-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.72em;
+  width: 6px;
+  height: 1px;
+  background: var(--ink-3);
+}
+
+.t-out-foot {
+  margin-top: var(--sp-5);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--rule);
+  font-size: var(--fs-small);
+  color: var(--ink-3);
+  line-height: 1.6;
+}
+
+/* ── 不可用状态（报关 fail-closed） ─────────────────────── */
+.t-unavailable {
+  grid-column: 1 / -1;
+  max-width: 760px;
+  border: 1px solid var(--ink);
+  padding: var(--sp-6);
+  display: grid;
+  gap: var(--sp-4);
+  justify-items: start;
+}
+
+.t-unavailable .micro {
+  color: var(--ink-3);
+}
+
+.t-unavailable-note {
+  font-size: var(--fs-lead);
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.t-contact {
+  list-style: none;
+  display: grid;
+  gap: var(--sp-1);
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+}
+
+/* ── 货物明细行（车辆匹配） ─────────────────────────────── */
+.t-rows {
+  margin-top: var(--sp-6);
+}
+
+.t-rows-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--sp-3);
+}
+
+.t-rows-head .t-hint {
+  margin-top: 0;
+}
+
+.t-row {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 0;
+  padding: var(--sp-4) 0 var(--sp-3);
+  min-width: 0;
+}
+
+.t-row-legend {
+  padding: 0 var(--sp-2) 0 0;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.t-row-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-3) var(--sp-4);
+}
+
+.t-check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+  align-self: end;
+  padding-bottom: 12px;
+}
+
+.t-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.t-add {
+  margin-top: var(--sp-3);
+}
+
+/* ── 车型分组（车辆匹配结果） ──────────────────────────── */
+.t-groups {
+  display: grid;
+  gap: var(--sp-3);
+  margin: var(--sp-4) 0;
+}
+
+.t-group {
+  border: 1px solid var(--rule);
+  padding: var(--sp-4);
+}
+
+.t-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-4);
+}
+
+.t-group-name {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.t-group-meta {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-small);
+  color: var(--ink-3);
+  line-height: 1.6;
+}
+
+.t-flags {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.t-flags li {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  padding: 1px 6px;
+}
+
+/* ── 留资弹层 ───────────────────────────────────────────── */
+.t-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+}
+
+.t-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--ink);
+  opacity: 0.5;
+}
+
+.t-modal {
+  position: relative;
+  width: min(880px, 100%);
+  max-height: calc(100vh - 2 * var(--sp-4));
+  overflow: auto;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+}
+
+.t-modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule);
+}
+
+.t-modal-head .micro {
+  margin-bottom: var(--sp-2);
+}
+
+.t-modal-body {
+  padding: var(--sp-5);
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.t-modal-body .t-hint {
+  margin-top: 0;
+}
+
+.t-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-5);
+}
+
+.t-side {
+  border-top: 1px solid var(--ink);
+  padding-top: var(--sp-3);
+  min-width: 0;
+}
+
+.t-lines {
+  list-style: none;
+  margin-top: var(--sp-3);
+}
+
+.t-line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+}
+
+.t-line-empty {
+  font-size: var(--fs-small);
+  color: var(--ink-3);
+  padding: var(--sp-2) 0;
+}
+
+.t-line-total {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--ink);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.t-side-note {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-micro);
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+.t-modal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  border-top: 1px solid var(--rule);
+  padding-top: var(--sp-4);
+}
+
+.t-modal-foot .t-hint {
+  margin-top: 0;
+}
+
+/* ── 测算助手页布局 ─────────────────────────────────────── */
+.t-assistant {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+  gap: var(--sp-7);
+  align-items: start;
+}
+
+.t-assistant-main {
+  display: grid;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.t-assistant-side {
+  border-top: 2px solid var(--ink);
+  padding-top: var(--sp-4);
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.t-assistant-side .t-label {
+  margin-top: var(--sp-3);
+}
+
+.t-assistant-side .t-hint {
+  margin-top: var(--sp-2);
+}
+
+/* ── 页间导航 ───────────────────────────────────────────── */
+.t-cross {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-6);
+  align-items: baseline;
+  padding-block: var(--sp-6) var(--sp-8);
+  border-top: 1px solid var(--rule);
+}
+
+.t-cross ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
+}
+
+.t-cross a {
+  font-size: var(--fs-small);
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 1px;
+}
+
+.t-cross a:hover {
+  border-bottom-color: var(--ink);
+}
+
+/* ── 响应式 ─────────────────────────────────────────────── */
+@media (max-width: 1000px) {
+  .t-grid,
+  .t-assistant,
+  .t-sides {
+    grid-template-columns: 1fr;
+  }
+  .t-hero {
+    padding-block: var(--sp-7) var(--sp-6);
+  }
+  .t-section {
+    padding-block: var(--sp-6) var(--sp-7);
+  }
+}
+
+@media (max-width: 760px) {
+  .t-row-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .t-span-2 {
+    grid-column: span 2;
+  }
+  .t-fields {
+    grid-template-columns: 1fr;
+  }
+  .t-form-head,
+  .t-out-head {
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
+  .t-form-head .micro,
+  .t-out-head .micro {
+    width: auto;
+  }
+  .t-unavailable {
+    padding: var(--sp-5);
+  }
+  .t-modal-head,
+  .t-modal-body {
+    padding: var(--sp-4);
+  }
+}

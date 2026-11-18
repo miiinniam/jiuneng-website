@@ -1,0 +1,260 @@
+/* 测算助手（悬浮入口 + 独立页共用）—— 只用 tokens.css 变量。
+   无阴影、无渐变、圆角 2px；展开时隐藏悬浮按钮。 */
+
+.tc-launcher {
+  position: fixed;
+  right: var(--sp-5);
+  bottom: var(--sp-5);
+  z-index: 60;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tc-fab {
+  height: 48px;
+  padding: 0 var(--sp-5);
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.tc-fab:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.tc-panel {
+  width: min(392px, calc(100vw - 2 * var(--sp-5)));
+  max-height: min(74vh, 660px);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+}
+
+.tc-head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.tc-head .micro {
+  margin-bottom: 2px;
+}
+
+.tc-sub {
+  font-size: var(--fs-small);
+  color: var(--ink-3);
+}
+
+/* ── 对话本体 ───────────────────────────────────────────── */
+.tc {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tc-page {
+  border: 1px solid var(--ink);
+  height: min(62vh, 600px);
+}
+
+.tc-embedded {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.tc-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.tc-panel .tc-list {
+  min-height: 140px;
+}
+
+.tc-intro {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.tc-sugs {
+  list-style: none;
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.tc-sug {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-small);
+  color: var(--ink);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.tc-sug:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+.tc-sug:disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
+.tc-msg {
+  font-size: var(--fs-small);
+  line-height: 1.65;
+  color: var(--ink-2);
+  max-width: 92%;
+}
+
+.tc-user {
+  align-self: flex-end;
+  max-width: 86%;
+  background: var(--ink);
+  color: var(--paper);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: 2px;
+}
+
+.tc-assistant {
+  align-self: flex-start;
+  border-left: 2px solid var(--accent);
+  padding: var(--sp-1) 0 var(--sp-1) var(--sp-3);
+}
+
+.tc-msg strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tc-user strong {
+  color: var(--paper);
+}
+
+.tc-p {
+  display: block;
+}
+
+.tc-gap {
+  display: block;
+  height: var(--sp-2);
+}
+
+.tc-li {
+  display: block;
+  position: relative;
+  padding-left: var(--sp-3);
+}
+
+.tc-li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+  color: var(--ink-3);
+}
+
+.tc-typing {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+/* 工具调用状态条：始终在，避免「思考中」没有落点 */
+.tc-status {
+  flex: none;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--rule);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+.tc-error {
+  flex: none;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  font-size: var(--fs-small);
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.tc-inputbar {
+  flex: none;
+  display: flex;
+  gap: var(--sp-2);
+  align-items: stretch;
+  padding: var(--sp-3) var(--sp-4) var(--sp-2);
+  border-top: 1px solid var(--rule);
+}
+
+.tc-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: none;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+
+.tc-input:hover {
+  border-color: var(--ink-3);
+}
+
+.tc-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+
+.tc-send {
+  height: auto;
+  min-width: 76px;
+  align-self: stretch;
+}
+
+.tc-note {
+  flex: none;
+  margin: 0;
+  padding: 0 var(--sp-4) var(--sp-3);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+@media (max-width: 760px) {
+  .tc-launcher {
+    right: var(--sp-4);
+    bottom: var(--sp-4);
+  }
+  .tc-page {
+    height: min(66vh, 520px);
+  }
+}
