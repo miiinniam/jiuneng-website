@@ -14,8 +14,8 @@ export type ChatMessage = { role: 'user' | 'assistant'; text: string };
 
 export type ChatStreamEvent =
   | { type: 'text'; content: string }
-  | { type: 'tool_start'; label: string }
-  | { type: 'tool_done'; label: string; ok: boolean; summary: string }
+  | { type: 'tool_start'; name: string; label: string }
+  | { type: 'tool_done'; name: string; label: string; ok: boolean; summary: string }
   | { type: 'error'; message: string }
   | { type: 'done' };
 
@@ -61,10 +61,11 @@ function parseFrame(frame: string): ChatStreamEvent | null {
     case 'text':
       return { type: 'text', content: str(data.content) };
     case 'tool_start':
-      return { type: 'tool_start', label: str(data.label) };
+      return { type: 'tool_start', name: str(data.name), label: str(data.label) };
     case 'tool_done':
       return {
         type: 'tool_done',
+        name: str(data.name),
         label: str(data.label),
         ok: data.ok !== false,
         summary: str(data.summary) || str(data.label),

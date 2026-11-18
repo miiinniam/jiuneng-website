@@ -29,13 +29,37 @@
 }
 
 .tc-panel {
-  width: min(392px, calc(100vw - 2 * var(--sp-5)));
-  max-height: min(74vh, 660px);
+  width: min(560px, calc(100vw - 2 * var(--sp-5)));
+  max-height: 92vh;
   display: flex;
   flex-direction: column;
   background: var(--paper);
   border: 1px solid var(--ink);
   border-radius: 2px;
+  overflow: hidden;
+}
+
+/* 顶部拖拽把手：拖动改变面板高度（高度存 localStorage） */
+.tc-grip {
+  flex: none;
+  height: 14px;
+  cursor: ns-resize;
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--rule);
+  touch-action: none;
+}
+
+.tc-grip:hover {
+  background: var(--paper-3);
+}
+
+.tc-grip::after {
+  content: '';
+  display: block;
+  width: 56px;
+  height: 3px;
+  margin: 5px auto 0;
+  background: var(--ink-3);
 }
 
 .tc-head {
@@ -249,10 +273,72 @@
   color: var(--ink-3);
 }
 
+/* ── v7.1：清空按钮 / 消息行 / 下一步 ─────────────────────── */
+.tc-tools {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--sp-2) var(--sp-4) 0;
+}
+
+.t-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: var(--fs-micro);
+  color: var(--ink-3);
+  cursor: pointer;
+  border-bottom: 1px solid var(--rule);
+}
+
+.t-link:hover {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+.tc-row {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.tc-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding-left: 2px;
+}
+
+.tc-act {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--accent);
+  font-size: var(--fs-small);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.tc-act:hover {
+  border-color: var(--accent);
+  background: var(--paper-2);
+}
+
+.tc-act:disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
 @media (max-width: 760px) {
   .tc-launcher {
     right: var(--sp-4);
     bottom: var(--sp-4);
+  }
+  .tc-panel {
+    width: calc(100vw - 2 * var(--sp-4));
   }
   .tc-page {
     height: min(66vh, 520px);
