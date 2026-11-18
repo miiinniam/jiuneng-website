@@ -31,13 +31,13 @@ const HEIGHT_KEY = 'jn-assistant-h';
 const MAX_KEPT = 40;
 
 const SUGGESTIONS = [
-  '南宁到河内 20 吨整车，里程和车型怎么算？',
-  '2 台车从友谊关进口到河内，报关和清关大概多少？',
-  '风机叶片 42 米、12 吨，用什么车？会超限吗？',
+  '报价需要准备哪些资料？',
+  '报价包含哪些费用？',
+  '客服联系方式是什么？',
 ];
 
 const EMPTY_INTRO =
-  '说明线路、货重与体积（拼车必须给体积），我按站内测算引擎给出里程、车数与参考区间。正式价格与时效由项目经理核定。';
+  '可以直接问报价要准备什么资料、报价里含哪些费用，或怎么联系客服；也可以给线路、货重与体积，我按站内测算引擎出里程、车数与参考区间。正式价格与时效由项目经理核定。';
 
 /** 每条回答后能点的「下一步」——按本轮真正调用过的工具决定，不猜。 */
 function actionsFor(tools: Set<string>): Action[] {
@@ -290,9 +290,11 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
         )}
       </div>
 
-      <p className="tc-status" data-testid="chat-tool-status" aria-live="polite">
-        {status}
-      </p>
+      {msgs.length > 0 ? (
+        <p className="tc-status" data-testid="chat-tool-status" aria-live="polite">
+          {status}
+        </p>
+      ) : null}
 
       {error ? (
         <p className="tc-error" role="alert">

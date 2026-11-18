@@ -20,6 +20,7 @@ import { agentI18n, type Lang, type Status } from '../src/agent/content';
 import { runQuote } from './osrmQuote';
 import { parseCustomsInput, publicRange as customsPublicRange } from './tools/customs';
 import { matchFleet, parseFleetInput } from './tools/fleet';
+import { quoteIntel } from '../src/agent/quoteIntel';
 
 /* ── 类型 ──────────────────────────────────────────────── */
 
@@ -82,15 +83,19 @@ export const AGENT_TOOLS = [
   {
     name: 'lookup_service_info',
     description:
-      '查询玖能自身的服务能力、能力状态（已上线/内测中/建设中）、单证与流程要点、联系方式。'
-      + '客户问「你们能做什么 / 要准备什么单证 / 流程怎么走 / 怎么联系」时调用；'
-      + '答案必须来自本工具返回的站内内容，不要凭你自己的记忆回答。',
+      '查询玖能自身的服务能力、能力状态（已上线/内测中/建设中）、单证与流程要点、联系方式，'
+      + '以及**报价口径**（报价要准备哪些资料、报价包含哪些费用）。'
+      + '客户问「报价要准备什么资料 / 需要提供什么信息 / 价格里都含什么 / 运费之外还收什么 / 怎么联系」时调用；'
+      + '答案必须来自本工具返回的站内内容，不要凭你自己的记忆回答。'
+      + '三条默认问题的对应主题：报价资料用 quote_docs，费用构成用 quote_fees，联系方式用 contact。',
     parameters: {
       type: 'object',
       properties: {
         topic: {
           type: 'string',
-          description: '查询主题：service（服务能力）/ documents（单证）/ process（流程）/ contact（联系方式）/ status（能力状态）',
+          description:
+            '查询主题：quote_docs（报价所需资料）/ quote_fees（报价费用构成）/ '
+            + 'service（服务能力）/ documents（单证）/ process（流程）/ contact（联系方式）/ status（能力状态）',
         },
       },
       required: ['topic'],
@@ -236,7 +241,12 @@ export function lookupServiceInfo(topic: string, lang: Lang): ToolResult {
   });
 
   let payload: Record<string, unknown>;
-  if (hit(/contact|联系|邮箱|电话|email|liên/)) {
+  /** 默认问题①：报价要准备什么资料（设备信息 + 机电类附加项） */
+  if (hit(/quote_docs|报价资料|资料清单|准备.{0,4}资料|资料准备|需要什么资料|what to prepare/)) {
+    payload = { quoteDocs: quoteIntel[lang] ?? quoteIntel.zh };
+  } else if (hit(/quote_fees|费用构成|包含.{0,6}费用|报价包含|费用包含|什么费用|what.*(cover|included)/)) {
+    payload = { quoteFees: quoteIntel[lang] ?? quoteIntel.zh };
+  } else if (hit(/contact|联系|邮箱|电话|email|liên/)) {
     payload = {
       contact: t.contact.items,
       email: t.common.email,
@@ -383,6 +393,10 @@ ${langRule}
 - 客户问到报关费、清关费、双边口岸费用、到门价时，调用 quote_customs_range。它只返回**区间**：可以转述区间，并明确告知「分项明细请在报关测算页填写公司与联系人后查看」；**不得在对话里给出分项金额或声称能在这里给到分项**。工具返回 available=false 时，如实说线上暂不提供报关费测算并请客户联系项目经理。
 - 客户问到用什么车、几辆、能不能装、是否超限时，调用 match_vehicles；它只回答车型/车数/超限，不回答价格。
 - 客户问到你们能做什么、要什么单证、流程怎么走、怎么联系时，调用 lookup_service_info，答案以工具返回为准。
+- **三条高频默认问题按固定口径回答，不得自己发挥**：
+  · 「报价需要准备什么资料」→ 调 lookup_service_info(quote_docs)：设备名称 / 设备说明 / 用途 / 品牌 / 型号 / 铭牌照片；机器设备与电器类另需功率、电压、工作原理、功能说明；再补件数、单件尺寸与重量、起运地与目的地、期望出运时间。
+  · 「报价包含哪些费用」→ 调 lookup_service_info(quote_fees)：按「运费 + 中国端 + 越南端」分段列；中国端报关、堆场、换车（换装）、装卸、杂费；越南端清关、口岸、堆场、换车、装卸、查验/滞留/吊装按实计；关税增值税保险按贸易条款（EXW/DAP/DDP）另定。**只说构成，不给金额**。
+  · 「客服联系方式」→ 调 lookup_service_info(contact)：以工具返回的邮箱、电话、地址为准，不要自己编号码。
 - 严禁凭记忆编造单证清单、关税、编码、时效或价格。
 
 语气：专业、克制、简洁。中文回答控制在 250 字以内；可用短列表；不要输出大段免责声明（站内已有固定说明）。公司邮箱：${t.common.email}；中国咨询电话：${t.common.phone}。`;
