@@ -18,6 +18,8 @@
 import { GoogleGenAI } from '@google/genai';
 import { agentI18n, type Lang, type Status } from '../src/agent/content';
 import { runQuote } from './osrmQuote';
+import { parseCustomsInput, publicRange as customsPublicRange } from './tools/customs';
+import { matchFleet, parseFleetInput } from './tools/fleet';
 
 /* ── 类型 ──────────────────────────────────────────────── */
 
@@ -92,6 +94,62 @@ export const AGENT_TOOLS = [
         },
       },
       required: ['topic'],
+    },
+  },
+  {
+    name: 'quote_customs_range',
+    description:
+      '测算中国端与越南端的口岸费用**区间**（报关、口岸、装卸/换装、清关、滞留），并给出 DDP 合计区间。'
+      + '客户问「报关费多少 / 清关怎么收 / 双边的费用 / 到门价」时调用。'
+      + '返回的只是区间，**分项明细必须由客户在官网填写联系信息后解锁**：'
+      + '不要在对话里承诺具体分项金额，也不要暗示可以在这里给到分项；'
+      + '如实说明「区间可按参数测算，分项明细请在报关测算页填写公司与联系人后查看」。'
+      + '金额一律为初步测算、非正式报价。若工具返回 available=false，说明线上暂不提供报关费测算，'
+      + '请客户联系项目经理，绝不自行估算费用。',
+    parameters: {
+      type: 'object',
+      properties: {
+        vehicle_count: { type: 'number', description: '车辆数，≥1，默认 1' },
+        domestic_transport_rmb: { type: 'number', description: '可选：中国境内段运费（人民币），不确定就不填' },
+        container_count: { type: 'number', description: '可选：集装箱数量' },
+        container_type: { type: 'string', description: '可选：箱型，例如 20GP / 40HQ / 40OT / 40FR' },
+        detention_days: { type: 'number', description: '可选：口岸滞留天数' },
+        heavy_lift_tons: { type: 'number', description: '可选：吊装吨位（大件装卸费按吨计）' },
+      },
+      required: ['vehicle_count'],
+    },
+  },
+  {
+    name: 'match_vehicles',
+    description:
+      '根据货物件数与单件尺寸重量推荐车型与车数，并判定是否超限（超长/超宽/超高/超重）与是否需要拆分。'
+      + '客户问「用什么车 / 要几辆 / 这个尺寸能不能装 / 会不会超限」时调用。'
+      + '本工具只回答车型、车数与超限，不返回任何价格；价格问题请改用 query_route_cost。',
+    parameters: {
+      type: 'object',
+      properties: {
+        weight_kg: { type: 'number', description: '货物总重量（公斤）' },
+        volume_m3: { type: 'number', description: '可选：总体积（立方米）' },
+        cargo_type: { type: 'string', description: '可选：货类，默认 normal（普货）' },
+        items: {
+          type: 'array',
+          description: '逐件货物；至少一行',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: '货物名称，例如 风机叶片' },
+              length_m: { type: 'number', description: '单件长度（米）' },
+              width_m: { type: 'number', description: '单件宽度（米）' },
+              height_m: { type: 'number', description: '单件高度（米），可选' },
+              weight_kg: { type: 'number', description: '单件重量（公斤）' },
+              count: { type: 'number', description: '件数' },
+              stackable: { type: 'boolean', description: '是否可叠放' },
+            },
+            required: ['length_m', 'width_m', 'weight_kg', 'count'],
+          },
+        },
+      },
+      required: ['weight_kg', 'items'],
     },
   },
 ];
@@ -201,12 +259,91 @@ export function lookupServiceInfo(topic: string, lang: Lang): ToolResult {
 
 /* ── 工具调度 ──────────────────────────────────────────── */
 
+/* ── 工具③：双边口岸费用区间（走 server/tools/customs.ts 唯一出口） ──
+   对客只给区间；分项必须留资解锁（/api/lead → /api/customs/detail），对话里绝不出现分项。 */
+
+const wan = (v: number) => `${Math.round(v / 10_000).toLocaleString('en-US')} 万`;
+
+export async function quoteCustomsRange(args: Record<string, unknown>): Promise<ToolResult> {
+  let input;
+  try {
+    input = parseCustomsInput(args);
+  } catch (error) {
+    const note = error instanceof Error ? error.message : '参数不完整';
+    return { ok: false, summary: `报关测算参数不完整：${note}`, payload: { ok: false, available: false, note } };
+  }
+
+  const range = await customsPublicRange(input).catch(() => null);
+  if (!range) {
+    return {
+      ok: false,
+      summary: '报关费用测算暂时不可用，请客户联系项目经理核算。',
+      payload: { ok: false, available: false, note: 'engine_unavailable' },
+    };
+  }
+  if (!range.available) {
+    return { ok: false, summary: range.note, payload: { ok: false, available: false, note: range.note } };
+  }
+
+  const facts: string[] = [`中国端口径：${input.vehicle_count} 车`];
+  facts.push(`中国端约 ¥${range.china.min_rmb.toLocaleString('en-US')} – ¥${range.china.max_rmb.toLocaleString('en-US')}（人民币）`);
+  if (range.vietnam) {
+    facts.push(`越南端约 ${wan(range.vietnam.min_vnd)} – ${wan(range.vietnam.max_vnd)} VND`);
+  }
+  if (range.ddp) {
+    facts.push(`DDP 合计约 ${wan(range.ddp.min_vnd)} – ${wan(range.ddp.max_vnd)} VND（按 1 RMB ≈ ${range.ddp.rate} VND 折算）`);
+  }
+  return {
+    ok: true,
+    summary: `${facts.join('；')}（初步测算，非正式报价；分项明细需在报关测算页填写公司与联系人后查看）`,
+    payload: { ok: true, ...range },
+  };
+}
+
+/* ── 工具④：车辆匹配与超限（走 server/tools/fleet.ts 唯一出口） ── */
+
+export async function matchVehicles(args: Record<string, unknown>): Promise<ToolResult> {
+  // TS 在跨模块判别联合上不收窄（本项目 tsconfig 已知行为），这里显式标注两支形状。
+  const parsed = parseFleetInput(args) as
+    | { ok: true; value: import('./tools/fleet').FleetInput }
+    | { ok: false; reason: string; note: string };
+  if (parsed.ok === false) {
+    return { ok: false, summary: parsed.note, payload: { ok: false, reason: parsed.reason, note: parsed.note } };
+  }
+
+  const result = (await matchFleet(parsed.value)) as
+    | {
+        ok: true;
+        groups: { model: string; category: string; vehicle_count: number; reason: string; flags: string[] }[];
+        total_trucks: number;
+        oversize: { blocked: boolean; basis: string };
+      }
+    | { ok: false; reason: string; note: string };
+  if (result.ok === false) {
+    return { ok: false, summary: result.note, payload: { ok: false, reason: result.reason, note: result.note } };
+  }
+
+  const groups = result.groups
+    .map((g) => `${g.category} × ${g.vehicle_count} 辆（${g.reason}）`)
+    .join('；');
+  const oversizeLine = result.oversize.blocked
+    ? '该票货物按现有车型配不上车：存在超限件，需专项方案或拆分，请联系项目经理评估。'
+    : '未触发超限拦截。';
+  return {
+    ok: true,
+    summary: `${groups || '未能匹配到合适车型'}；共 ${result.total_trucks} 辆。${oversizeLine}`,
+    payload: { ok: true, ...result },
+  };
+}
+
 export async function executeTool(
   name: string,
   args: Record<string, unknown>,
   lang: Lang,
 ): Promise<ToolResult> {
   if (name === 'query_route_cost') return queryRouteCost(args);
+  if (name === 'quote_customs_range') return quoteCustomsRange(args);
+  if (name === 'match_vehicles') return matchVehicles(args);
   if (name === 'lookup_service_info') return lookupServiceInfo(String(args.topic ?? ''), lang);
   return { ok: false, summary: `未知工具 ${name}`, payload: { error: 'unknown_tool' } };
 }
@@ -228,7 +365,7 @@ export function systemPrompt(lang: Lang): string {
       ? '回答语言：英语。'
       : '回答语言：中文（客户用越南语/英语提问时跟随客户语言）。';
 
-  return `你是 JIUNENG logistics（玖能国际）工程物流平台的「物流 AI 数字员工」，对外统一以数字员工身份回答，聚焦中越工程物流、进出口报关与国际贸易。
+  return `你是 JIUNENG logistics（玖能国际）工程物流平台的「测算助手」，聚焦中越工程物流、进出口报关与国际贸易。
 玖能定位「面向中国企业的工程物流平台」：中国侧由广西玖一进出口贸易有限公司提供进出口与报关支持，越南侧通过越南本地合作代理网络衔接业务。
 
 ${langRule}
@@ -243,6 +380,8 @@ ${langRule}
 
 工具使用（重要）：
 - 客户问到线路、里程、口岸、车型时，调用 query_route_cost；该工具未接入或失败时，如实告知「线路查询暂未接入，可由项目经理核算」，不要自行估算。
+- 客户问到报关费、清关费、双边口岸费用、到门价时，调用 quote_customs_range。它只返回**区间**：可以转述区间，并明确告知「分项明细请在报关测算页填写公司与联系人后查看」；**不得在对话里给出分项金额或声称能在这里给到分项**。工具返回 available=false 时，如实说线上暂不提供报关费测算并请客户联系项目经理。
+- 客户问到用什么车、几辆、能不能装、是否超限时，调用 match_vehicles；它只回答车型/车数/超限，不回答价格。
 - 客户问到你们能做什么、要什么单证、流程怎么走、怎么联系时，调用 lookup_service_info，答案以工具返回为准。
 - 严禁凭记忆编造单证清单、关税、编码、时效或价格。
 

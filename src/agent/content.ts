@@ -603,6 +603,8 @@ const zh: AgentContent = {
     thinking: '正在整理…',
     toolLabels: {
       query_route_cost: '正在查询线路…',
+      quote_customs_range: '正在测算口岸费用…',
+      match_vehicles: '正在匹配车型…',
       lookup_service_info: '正在查站内资料…',
     },
     disclaimer: 'AI 输出为初步整理，不构成报价或时效承诺；正式方案由项目经理跟进。',
@@ -942,6 +944,8 @@ const en: AgentContent = {
     thinking: 'Organising…',
     toolLabels: {
       query_route_cost: 'Checking the route…',
+      quote_customs_range: 'Estimating border fees…',
+      match_vehicles: 'Matching vehicle types…',
       lookup_service_info: 'Checking our service information…',
     },
     disclaimer: 'AI output is an initial summary, not a quotation or a lead-time commitment; a project manager follows up on the formal plan.',
@@ -1370,6 +1374,8 @@ const vi: AgentContent = {
     thinking: 'Đang tổng hợp…',
     toolLabels: {
       query_route_cost: 'Đang tra tuyến…',
+      quote_customs_range: 'Đang tính phí cửa khẩu…',
+      match_vehicles: 'Đang ghép loại xe…',
       lookup_service_info: 'Đang tra thông tin dịch vụ…',
     },
     disclaimer: 'Nội dung do AI tạo là bản tổng hợp bước đầu, không phải báo giá hay cam kết thời gian; quản lý dự án sẽ theo sát phương án chính thức.',

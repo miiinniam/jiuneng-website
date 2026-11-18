@@ -91,7 +91,7 @@ function chatPlanLabel(): string {
     : `${plan.primary.label}${forced ? '（CHAT_PROVIDER 强制指定，不回退）' : ''}`;
 }
 
-console.info(`[chat] 数字员工对话模型：${chatPlanLabel()}`);
+console.info(`[chat] 测算助手对话模型：${chatPlanLabel()}`);
 
 // API: Health probe —— 如实反映依赖状态。
 // 轻量模式必须永远快、永远 200（UptimeRobot 保活依赖它）；深探测只在 ?deep=1 时实时打引擎。
