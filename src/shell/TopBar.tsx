@@ -1,30 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLang } from './LangProvider';
 import { LANG_LABEL, LANGS } from './i18n';
-import common from '../content/zh/common';
+import { getCommon } from '../content';
+import type { CommonCopy } from '../content';
 
-const PLATFORM_LINKS = [
-  { href: '/platform', label: common.platformMenu.overview },
-  { href: '/platform/routing', label: common.platformMenu.routing },
-  { href: '/platform/customs', label: common.platformMenu.customs },
-  { href: '/platform/fleet', label: common.platformMenu.fleet },
-  { href: '/platform/assistant', label: common.platformMenu.assistant },
+const platformLinksOf = (c: CommonCopy) => [
+  { href: '/platform', label: c.platformMenu.overview },
+  { href: '/quote', label: c.platformMenu.quote },
+  { href: '/platform/routing', label: c.platformMenu.routing },
+  { href: '/platform/customs', label: c.platformMenu.customs },
+  { href: '/platform/fleet', label: c.platformMenu.fleet },
+  { href: '/platform/assistant', label: c.platformMenu.assistant },
 ];
 
-const NAV = [
-  { href: '/services', label: common.nav.services },
-  { href: '/projects', label: common.nav.projects },
-  { href: '/about', label: common.nav.about },
-  { href: '/contact', label: common.nav.contact },
+const navOf = (c: CommonCopy) => [
+  { href: '/services', label: c.nav.services },
+  { href: '/projects', label: c.nav.projects },
+  { href: '/about', label: c.nav.about },
+  { href: '/contact', label: c.nav.contact },
 ];
 
 export default function TopBar() {
   const { lang, setLang } = useLang();
+  const common = getCommon(lang);
+  const PLATFORM_LINKS = platformLinksOf(common);
+  const NAV = navOf(common);
   const [dropOpen, setDropOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement | null>(null);
   const path = typeof window !== 'undefined' ? window.location.pathname : '';
-  const platformActive = path.startsWith('/platform') || path === '/ai';
+  const platformActive = path.startsWith('/platform') || path.startsWith('/quote') || path === '/ai';
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -37,9 +42,14 @@ export default function TopBar() {
   return (
     <header className="jn-bar">
       <div className="jn-bar-in">
-        <a className="jn-mark" href="/" data-testid="nav-home">
-          {common.brand}
-          <small>{common.brandSub}</small>
+        <a className="jn-mark jn-mark-logo" href="/" data-testid="nav-home">
+          <img
+            src="/assets/logo-horizontal.png"
+            alt={`${common.brand} ${common.brandSub}`}
+            width={1133}
+            height={238}
+            decoding="async"
+          />
         </a>
 
         <nav className="jn-nav" aria-label="主导航">

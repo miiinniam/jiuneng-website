@@ -14,6 +14,8 @@ import {
   type CustomsParams,
   type CustomsRange,
 } from './api';
+import { getTools } from '../content';
+import { useLang } from '../shell/LangProvider';
 import { Disclaim, ErrorLine } from './parts';
 import LeadModal from './LeadModal';
 
@@ -32,6 +34,8 @@ function optFloat(raw: string): number | undefined {
 }
 
 export default function CustomsForm() {
+  const { lang } = useLang();
+  const t = getTools(lang);
   const [vehicles, setVehicles] = useState('1');
   const [domestic, setDomestic] = useState('');
   const [containers, setContainers] = useState('');
@@ -52,7 +56,7 @@ export default function CustomsForm() {
 
     const count = Number(vehicles);
     if (!Number.isFinite(count) || count < 1) {
-      setError('车辆数需为大于等于 1 的整数（单位：台）。');
+      setError(t.customs.errVehicles);
       setRange(null);
       return;
     }
@@ -71,7 +75,7 @@ export default function CustomsForm() {
     try {
       const data = await fetchCustomsRange(params);
       if (data.available === false) {
-        setUnavailable(data.note || '线上暂不提供报关费测算，请联系项目经理');
+        setUnavailable(data.note || t.customs.noteFallback);
         setRange(null);
         setLockedParams(null);
       } else {
@@ -91,12 +95,11 @@ export default function CustomsForm() {
     return (
       <div className="t-grid">
         <section className="t-unavailable">
-          <p className="micro">线上测算暂停</p>
-          <h2 className="t-h2">线上暂不提供报关费测算</h2>
+          <p className="micro">{t.customs.pausedKicker}</p>
+          <h2 className="t-h2">{t.customs.pausedTitle}</h2>
           <p className="t-unavailable-note">{unavailable}</p>
           <p className="t-hint">
-            两岸口岸费用随柜型、查验率与滞留天数变动，需要按票核算。请把起运地、柜型与预计车期发给项目经理，
-            我们给书面口径。
+            {t.customs.pausedBody}
           </p>
           <ul className="t-contact">
             <li>{common.footer.contactLines[0]}</li>
@@ -115,13 +118,13 @@ export default function CustomsForm() {
     <div className="t-grid">
       <form className="t-form" onSubmit={submit} noValidate>
         <div className="t-form-head">
-          <p className="micro">输入</p>
-          <h2 className="t-h2">柜型 · 车数 · 附加作业</h2>
+          <p className="micro">{t.customs.inputKicker}</p>
+          <h2 className="t-h2">{t.customs.inputTitle}</h2>
         </div>
 
         <div className="t-fields">
           <label className="t-field">
-            <span className="t-label">车辆数（台）</span>
+            <span className="t-label">{t.customs.vehicles}</span>
             <input
               className="t-input"
               data-testid="customs-vehicles"
@@ -136,7 +139,7 @@ export default function CustomsForm() {
 
           <label className="t-field">
             <span className="t-label">
-              境内运费（RMB）<span className="t-opt">选填</span>
+              {t.customs.inland}<span className="t-opt">{t.customs.inlandOpt}</span>
             </span>
             <input
               className="t-input"
@@ -144,7 +147,7 @@ export default function CustomsForm() {
               inputMode="numeric"
               min={0}
               step={100}
-              placeholder="不计入时留空"
+              placeholder={t.customs.inlandPh}
               value={domestic}
               onChange={(e) => setDomestic(e.target.value)}
             />
@@ -152,7 +155,7 @@ export default function CustomsForm() {
 
           <label className="t-field">
             <span className="t-label">
-              柜数<span className="t-opt">选填</span>
+              {t.customs.containers}<span className="t-opt">{t.customs.opt}</span>
             </span>
             <input
               className="t-input"
@@ -167,10 +170,10 @@ export default function CustomsForm() {
 
           <label className="t-field">
             <span className="t-label">
-              柜型<span className="t-opt">选填</span>
+              {t.customs.containerType}<span className="t-opt">{t.customs.opt}</span>
             </span>
             <select className="t-input" value={containerType} onChange={(e) => setContainerType(e.target.value)}>
-              <option value="">未指定</option>
+              <option value="">{t.customs.containerNone}</option>
               <option value="20GP">20GP</option>
               <option value="40GP">40GP</option>
               <option value="40HQ">40HQ</option>
@@ -180,7 +183,7 @@ export default function CustomsForm() {
 
           <label className="t-field">
             <span className="t-label">
-              滞留天数<span className="t-opt">选填</span>
+              {t.customs.dwell}<span className="t-opt">{t.customs.opt}</span>
             </span>
             <input
               className="t-input"
@@ -195,7 +198,7 @@ export default function CustomsForm() {
 
           <label className="t-field">
             <span className="t-label">
-              吊装吨位（吨）<span className="t-opt">选填</span>
+              {t.customs.lift}<span className="t-opt">{t.customs.opt}</span>
             </span>
             <input
               className="t-input"
@@ -209,34 +212,34 @@ export default function CustomsForm() {
           </label>
         </div>
 
-        <p className="t-hint">金额与车数按常规作业条件测算；查验、滞留与特殊吊装以现场实际发生为准。</p>
+        <p className="t-hint">{t.customs.note}</p>
 
         <ErrorLine text={error} testId="customs-error" />
 
         <div className="t-actions">
           <button type="submit" className="t-btn" data-testid="customs-submit" disabled={status === 'busy'}>
-            {status === 'busy' ? '测算中…' : '测算两端费用'}
+            {status === 'busy' ? t.customs.submitBusy : t.customs.submit}
           </button>
         </div>
       </form>
 
       <section className="t-out" data-testid="customs-range" aria-live="polite">
         <div className="t-out-head">
-          <p className="micro">结果</p>
-          <h2 className="t-h2">中国端 · 越南端 · DDP</h2>
+          <p className="micro">{t.customs.resultKicker}</p>
+          <h2 className="t-h2">{t.customs.resultTitle}</h2>
         </div>
 
-        {status === 'busy' ? <p className="t-hint">正在向报关引擎取数…</p> : null}
+        {status === 'busy' ? <p className="t-hint">{t.customs.fetching}</p> : null}
 
         {status !== 'busy' && !ready ? (
-          <p className="t-hint">填写左侧参数后点「测算两端费用」，先看区间；需要分项时再留公司信息。</p>
+          <p className="t-hint">{t.customs.empty}</p>
         ) : null}
 
         {status !== 'busy' && ready ? (
           <>
             <dl className="t-stats">
               <div className="t-stat">
-                <dt>中国端（出口报关）</dt>
+                <dt>{t.customs.rowChina}</dt>
                 <dd>
                   <span className="t-num">{fmtInt(ready.china.min_rmb)}</span>
                   <span className="t-dash">–</span>
@@ -244,7 +247,7 @@ export default function CustomsForm() {
                 </dd>
               </div>
               <div className="t-stat">
-                <dt>越南端（进口清关）</dt>
+                <dt>{t.customs.rowVietnam}</dt>
                 <dd>
                   {ready.vietnam ? (
                     <>
@@ -253,12 +256,12 @@ export default function CustomsForm() {
                       <span className="t-num">{fmtInt(ready.vietnam.max_vnd)}</span> VND
                     </>
                   ) : (
-                    '汇率暂不可用，越南端暂不折算'
+                    t.customs.fxUnavailable
                   )}
                 </dd>
               </div>
               <div className="t-stat">
-                <dt>DDP 合计（估）</dt>
+                <dt>{t.customs.rowDdp}</dt>
                 <dd>
                   {ready.ddp ? (
                     <>
@@ -267,13 +270,13 @@ export default function CustomsForm() {
                       <span className="t-num">{fmtInt(ready.ddp.max_vnd)}</span> VND
                     </>
                   ) : (
-                    '汇率暂不可用，DDP 暂不折算'
+                    t.customs.fxUnavailableDdp
                   )}
                 </dd>
               </div>
               {ready.ddp ? (
                 <div className="t-stat">
-                  <dt>折算汇率</dt>
+                  <dt>{t.customs.rowFx}</dt>
                   <dd>
                     1 RMB = <span className="t-num">{fmtInt(ready.ddp.rate)}</span> VND
                   </dd>
@@ -282,7 +285,7 @@ export default function CustomsForm() {
             </dl>
 
             <p className="t-price-note">
-              区间为对客口径的上下浮动，取整到 10 元 / 10 万越南盾；不含查验超额、临时仓储与特殊吊装。
+              {t.customs.rangeNote}
             </p>
 
             <div className="t-actions">
@@ -292,9 +295,9 @@ export default function CustomsForm() {
                 data-testid="customs-unlock"
                 onClick={() => setModalOpen(true)}
               >
-                看分项明细
+                {t.customs.detailCta}
               </button>
-              <span className="t-busy">需填写公司、联系人、联系方式三项</span>
+              <span className="t-busy">{t.customs.detailNeed}</span>
             </div>
           </>
         ) : null}

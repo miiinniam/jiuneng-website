@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import HairlineTable from '../HairlineTable';
 import PhotoFull from '../PhotoFull';
 import SectionHeader from '../SectionHeader';
 import { PageHead } from '../ui';
-import { contact } from '../content';
+import { getContact } from '../../content';
+import { useLang } from '../../shell/LangProvider';
+import { applyLangToDocument } from '../../shell/i18n';
 
 type FormState = {
   name: string;
@@ -26,22 +28,29 @@ type ConsultResult = {
 
 type Status = 'idle' | 'loading' | 'ok' | 'fallback' | 'invalid';
 
-const f = contact.form;
-
-const EMPTY: FormState = {
-  name: '',
-  company: '',
-  inquiryType: f.types[0],
-  loadingPort: '',
-  dischargePort: '',
-  weightEstimate: '',
-  details: '',
-};
-
 export default function Contact() {
-  const [form, setForm] = useState<FormState>(EMPTY);
+  const { lang } = useLang();
+  const t = getContact(lang);
+  const f = t.form;
+
+  const [form, setForm] = useState<FormState>({
+    name: '',
+    company: '',
+    inquiryType: t.form.types[0],
+    loadingPort: '',
+    dischargePort: '',
+    weightEstimate: '',
+    details: '',
+  });
   const [status, setStatus] = useState<Status>('idle');
   const [result, setResult] = useState<ConsultResult | null>(null);
+
+  useEffect(() => {
+    applyLangToDocument(lang, t.meta.title);
+  }, [lang, t]);
+
+  /* 语言切换后，已选业务类型若不在当前语言的清单里，回落到第一项，避免下拉框显示上次语言的词 */
+  const inquiryType = f.types.includes(form.inquiryType) ? form.inquiryType : f.types[0];
 
   function onChange(e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
     const { name, value } = e.target;
@@ -68,7 +77,7 @@ export default function Contact() {
         body: JSON.stringify({
           name: form.name,
           company: form.company,
-          inquiryType: form.inquiryType,
+          inquiryType,
           loadingPort: form.loadingPort,
           dischargePort: form.dischargePort,
           weightEstimate: form.weightEstimate,
@@ -93,7 +102,7 @@ export default function Contact() {
     }
   }
 
-  const detailRows = contact.details.map((d) => ({
+  const detailRows = t.details.map((d) => ({
     k: d.label,
     v:
       d.href ? (
@@ -109,20 +118,19 @@ export default function Contact() {
 
   return (
     <>
-      <PageHead no="05" kicker="联系与询价" title={contact.title} lead={contact.intro} />
+      <PageHead no="05" kicker={t.eyebrow} title={t.title} lead={t.intro} />
 
       <section className="section">
         <div className="wrap">
-          <SectionHeader no="01" title="联系方式" lead="工作日由项目经理直接回复；紧急项目请同时致电。" />
+          <SectionHeader no="01" title={t.detailsTitle} lead={t.detailsLead} />
           <div className="contact-grid">
-            <HairlineTable head={['项目', '信息']} groups={[{ rows: detailRows }]} />
+            <HairlineTable head={t.tableHead} groups={[{ rows: detailRows }]} />
             <div className="contact-side">
-              <p className="micro">建议随询价提供</p>
+              <p className="micro">{t.sideKicker}</p>
               <ul className="lines">
-                <li>装箱单与设备图纸</li>
-                <li>尺寸重量表（单件最大尺寸）</li>
-                <li>目的地地址与现场装卸条件</li>
-                <li>交付时间与单证状态</li>
+                {t.sideItems.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
               </ul>
             </div>
           </div>
@@ -163,10 +171,10 @@ export default function Contact() {
 
               <label className="field" htmlFor="cf-type">
                 <span className="field-label">{f.fields.inquiryType}</span>
-                <select id="cf-type" name="inquiryType" value={form.inquiryType} onChange={onChange} data-testid="field-type">
-                  {f.types.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                <select id="cf-type" name="inquiryType" value={inquiryType} onChange={onChange} data-testid="field-type">
+                  {f.types.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
                     </option>
                   ))}
                 </select>
@@ -224,7 +232,7 @@ export default function Contact() {
               <button className="btn" type="submit" data-testid="contact-submit" disabled={status === 'loading'}>
                 {status === 'loading' ? f.submitting : f.submit}
               </button>
-              <p className="micro submit-note">联系人与项目详情为必填，其余字段可留空。</p>
+              <p className="micro submit-note">{f.requiredNote}</p>
             </div>
 
             <div className="result" data-testid="contact-result" aria-live="polite">
@@ -234,15 +242,15 @@ export default function Contact() {
 
               {status === 'invalid' ? (
                 <div className="result-body">
-                  <h3 className="result-title">还需要补充两项</h3>
-                  <p>请填写联系人与项目详情，其余字段可留空，项目经理会电话或邮件补齐。</p>
+                  <h3 className="result-title">{f.incompleteTitle}</h3>
+                  <p>{f.incompleteBody}</p>
                   <p className="note">{f.disclaimer}</p>
                 </div>
               ) : null}
 
               {status === 'fallback' ? (
                 <div className="result-body">
-                  <h3 className="result-title">初步评估</h3>
+                  <h3 className="result-title">{f.resultTitle}</h3>
                   <p>{f.fallback}</p>
                   <p className="result-error">{f.errorNote}</p>
                   <p className="note">{f.disclaimer}</p>
@@ -251,13 +259,13 @@ export default function Contact() {
 
               {status === 'ok' && result ? (
                 <div className="result-body">
-                  <h3 className="result-title">初步评估</h3>
+                  <h3 className="result-title">{f.resultTitle}</h3>
                   <p className="result-route">{result.routeRecommendation}</p>
 
                   <div className="result-cols">
                     {result.documentChecklist && result.documentChecklist.length > 0 ? (
                       <div>
-                        <p className="micro">可能涉及的单证</p>
+                        <p className="micro">{f.docTitle}</p>
                         <ul className="lines">
                           {result.documentChecklist.map((d) => (
                             <li key={d}>{d}</li>
@@ -268,7 +276,7 @@ export default function Contact() {
 
                     {result.riskMitigation && result.riskMitigation.length > 0 ? (
                       <div>
-                        <p className="micro">需提前确认</p>
+                        <p className="micro">{f.riskTitle}</p>
                         <ul className="lines">
                           {result.riskMitigation.map((d) => (
                             <li key={d}>{d}</li>
@@ -280,7 +288,7 @@ export default function Contact() {
 
                   {result.hsCodeAdvice ? (
                     <div className="result-block">
-                      <p className="micro">归类与关税方向</p>
+                      <p className="micro">{f.hsTitle}</p>
                       <p>{result.hsCodeAdvice}</p>
                     </div>
                   ) : null}
@@ -297,7 +305,7 @@ export default function Contact() {
         </div>
       </section>
 
-      <PhotoFull src={contact.photo.src} alt={contact.photo.alt} caption={contact.photo.caption} ratio="21/9" />
+      <PhotoFull src={t.photo.src} alt={t.photo.alt} caption={t.photo.caption} ratio="21/9" />
     </>
   );
 }

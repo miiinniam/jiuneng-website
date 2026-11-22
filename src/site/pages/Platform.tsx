@@ -1,14 +1,19 @@
 import PhotoFull from '../PhotoFull';
 import SectionHeader from '../SectionHeader';
 import { ArrowLink, PageHead } from '../ui';
-import { about, platform } from '../content';
+import { getChrome, getSite } from '../../content';
+import { useLang } from '../../shell/LangProvider';
 
 export default function Platform() {
+  const { lang } = useLang();
+  const ui = getChrome(lang);
+  const { about, platform } = getSite(lang);
+
   return (
     <>
       <PageHead
         no="01"
-        kicker="平台"
+        kicker={ui.platform.kicker}
         title={platform.title}
         lead={platform.intro}
         note={platform.note}
@@ -22,8 +27,8 @@ export default function Platform() {
         <div className="wrap">
           <SectionHeader
             no="02"
-            title="四项工具，按项目推进顺序排列"
-            lead="先算线路，再算税费，再匹配车辆；需求还没成形时，用测算助手把要点整理出来交给项目经理。"
+            title={ui.platform.productTitle}
+            lead={ui.platform.productLead}
           />
 
           <div className="prods">
@@ -40,7 +45,7 @@ export default function Platform() {
                   ))}
                 </ul>
                 <ArrowLink href={p.href} className="prod-link">
-                  打开
+                  {ui.platform.open}
                 </ArrowLink>
               </article>
             ))}
@@ -52,32 +57,32 @@ export default function Platform() {
         <div className="wrap">
           <SectionHeader
             no="03"
-            title="工具之外，方案仍由人复核"
-            lead="测算结果用于把沟通条件对齐，不替代现场核查与单证核定。"
+            title={ui.platform.reviewTitle}
+            lead={ui.platform.reviewLead}
           />
           <div className="two-col">
             <div>
-              <h3 className="sub-title">工具给出什么</h3>
+              <h3 className="sub-title">{ui.platform.givesTitle}</h3>
               <ul className="lines">
-                <li>干线里程、行车时长、车辆数量与参考运价区间</li>
-                <li>中国端与越南端的报关费用区间</li>
-                <li>按单件尺寸匹配的车型与超限标注</li>
+                {ui.platform.gives.map((g) => (
+                  <li key={g}>{g}</li>
+                ))}
               </ul>
             </div>
             <div>
-              <h3 className="sub-title">谁来确认</h3>
+              <h3 className="sub-title">{ui.platform.whoTitle}</h3>
               <ul className="lines">
-                <li>项目经理复核线路、车型与单证路径</li>
-                <li>正式报价以复核后的方案为准</li>
-                <li>越南侧由本地合作代理网络执行</li>
+                {ui.platform.who.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
               </ul>
             </div>
           </div>
 
           <div className="end-row">
-            <h2 className="end-title">把项目条件发来，直接进入复核</h2>
+            <h2 className="end-title">{ui.platform.endTitle}</h2>
             <a className="btn" href="/contact">
-              提交询价
+              {ui.submitQuote}
             </a>
           </div>
         </div>

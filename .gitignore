@@ -24,3 +24,7 @@ __pycache__/
 
 # v7：留资线索 JSONL（运行时生成，含客户联系方式，绝不入库）
 data/
+
+# 旧 OSRM++ 实现副本：仅本地参考，生产代码不 import。
+# 里面有 backend 的成本模型（费用计算公式.py / cost_engine.py），而本仓库是 public。
+features/quote/legacy/

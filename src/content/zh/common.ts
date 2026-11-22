@@ -12,6 +12,7 @@ const common = {
   },
   platformMenu: {
     overview: '平台总览',
+    quote: '在线报价',
     routing: '线路与运价测算',
     customs: '报关与税费',
     fleet: '车辆匹配与超限',
@@ -39,6 +40,14 @@ const common = {
     loading: '计算中…',
     retry: '重试',
     required: '必填',
+    skip: '跳到主要内容',
+  },
+  assistant: {
+    fab: '咨询助手',
+    title: '咨询助手 · 大厅',
+    sub: '业务咨询 · 流程与单证 · 不做报价',
+    close: '收起助手',
+    grip: '调整面板高度',
   },
 };
 

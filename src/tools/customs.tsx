@@ -3,17 +3,21 @@ import '../styles/tools.css';
 import CustomsForm from './CustomsForm';
 import AssistantLauncher from './AssistantLauncher';
 import { ToolHeader } from './parts';
+import { getTools } from '../content';
+import { useLang } from '../shell/LangProvider';
 
 function Customs() {
+  const { lang } = useLang();
+  const t = getTools(lang);
   return (
     <>
       <ToolHeader
-        index="平台 02 / 报关与税费"
-        title="报关与税费"
-        lead="中国出口报关与越南进口清关两端费用，先给区间；需要看分项时留下公司与联系人，同一页展开明细。"
+        index={t.customs.index}
+        title={t.customs.title}
+        lead={t.customs.lead}
         aside={
           <p className="t-hero-note">
-            公开页只给区间：分项金额属对外含服务口径，正式报价以项目经理复核为准。
+            {t.customs.aside}
           </p>
         }
       />
@@ -22,17 +26,17 @@ function Customs() {
         <CustomsForm />
       </div>
 
-      <nav className="t-cross" aria-label="其他工具">
-        <p className="micro">继续</p>
+      <nav className="t-cross" aria-label={t.nav.crossAria}>
+        <p className="micro">{t.nav.continue}</p>
         <ul>
           <li>
-            <a href="/platform/routing">01 线路与运价测算 →</a>
+            <a href="/platform/routing">{t.nav.toRouting}</a>
           </li>
           <li>
-            <a href="/platform/fleet">03 车辆匹配与超限 →</a>
+            <a href="/platform/fleet">{t.nav.toFleet}</a>
           </li>
           <li>
-            <a href="/platform/assistant">04 测算助手 →</a>
+            <a href="/platform/assistant">{t.nav.toAssistant}</a>
           </li>
         </ul>
       </nav>

@@ -10,6 +10,8 @@
  *  - 流结束但一个字都没有时，由调用方补一句兜底文案（这里不编话术）。
  */
 
+import { getTools } from '../content';
+
 export type ChatMessage = { role: 'user' | 'assistant'; text: string };
 
 export type ChatStreamEvent =
@@ -36,9 +38,11 @@ export class ChatStreamError extends Error {
   }
 }
 
-const FALLBACK_ERROR = '助手暂时没有响应，请稍后重试；也可以直接在「在线询价」里提交项目信息。';
+export function chatFallbackError(lang: 'zh' | 'vi' | 'en'): string {
+  return getTools(lang).api.chatFallback;
+}
 
-function parseFrame(frame: string): ChatStreamEvent | null {
+function parseFrame(frame: string, fallback: string): ChatStreamEvent | null {
   const lines = frame.split(/\r?\n/);
   const eventLine = lines.find((line) => line.startsWith('event:'));
   const dataLine = lines.find((line) => line.startsWith('data:'));
@@ -71,7 +75,7 @@ function parseFrame(frame: string): ChatStreamEvent | null {
         summary: str(data.summary) || str(data.label),
       };
     case 'error':
-      return { type: 'error', message: str(data.message) || FALLBACK_ERROR };
+      return { type: 'error', message: str(data.message) || fallback };
     case 'done':
       return { type: 'done' };
     default:
@@ -80,6 +84,7 @@ function parseFrame(frame: string): ChatStreamEvent | null {
 }
 
 export async function streamChat({ messages, lang, signal, onEvent }: ChatStreamOptions): Promise<void> {
+  const fallback = chatFallbackError(lang);
   let res: Response;
   try {
     res = await fetch('/api/agent-chat', {
@@ -90,11 +95,11 @@ export async function streamChat({ messages, lang, signal, onEvent }: ChatStream
     });
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') throw err;
-    throw new ChatStreamError('network', FALLBACK_ERROR);
+    throw new ChatStreamError('network', fallback);
   }
 
   if (!res.ok || !res.body) {
-    throw new ChatStreamError(`status_${res.status}`, FALLBACK_ERROR);
+    throw new ChatStreamError(`status_${res.status}`, fallback);
   }
 
   const reader = res.body.getReader();
@@ -113,15 +118,14 @@ export async function streamChat({ messages, lang, signal, onEvent }: ChatStream
       buffer = frames.pop() ?? '';
 
       for (const frame of frames) {
-        const event = parseFrame(frame);
+        const event = parseFrame(frame, fallback);
         if (event) onEvent(event);
       }
     }
-    const tail = parseFrame(buffer.replace(/\r\n/g, '\n'));
+    const tail = parseFrame(buffer.replace(/\r\n/g, '\n'), fallback);
     if (tail) onEvent(tail);
   } finally {
     reader.releaseLock();
   }
 }
 
-export { FALLBACK_ERROR as chatFallbackError };

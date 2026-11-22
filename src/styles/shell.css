@@ -38,6 +38,15 @@
   color: var(--ink);
   white-space: nowrap;
 }
+.jn-mark-logo {
+  display: flex;
+  align-items: center;
+}
+.jn-mark-logo img {
+  display: block;
+  height: 26px;
+  width: auto;
+}
 .jn-mark small {
   font-weight: 400;
   letter-spacing: 0.02em;
@@ -62,10 +71,8 @@
   border-bottom: 1px solid transparent;
   color: inherit;
   font-size: 15px;
-}
-.jn-nav a:hover,
-.jn-nav button:hover {
-  border-bottom-color: var(--ink);
+  touch-action: manipulation;
+  transition: border-bottom-color var(--dur-hover) var(--ease-enter);
 }
 .jn-nav .is-active {
   border-bottom-color: var(--ink);
@@ -95,6 +102,12 @@
   font-weight: 600;
 }
 .jn-btn {
+  touch-action: manipulation;
+  transition:
+    background-color var(--dur-hover) var(--ease-enter),
+    border-color var(--dur-hover) var(--ease-enter),
+    color var(--dur-hover) var(--ease-enter),
+    transform var(--dur-press) var(--ease-enter);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -109,18 +122,13 @@
   cursor: pointer;
   white-space: nowrap;
 }
-.jn-btn:hover {
-  background: var(--accent-ink);
-  border-color: var(--accent-ink);
+.jn-btn:active {
+  transform: scale(0.97);
 }
 .jn-btn-ghost {
   background: transparent;
   color: var(--ink);
   border-color: var(--ink);
-}
-.jn-btn-ghost:hover {
-  background: var(--ink);
-  color: var(--on-ink);
 }
 .jn-btn-text {
   background: none;
@@ -153,10 +161,6 @@
   border: 0;
   font-size: 14px;
   color: var(--ink-2);
-}
-.jn-drop-panel a:hover {
-  background: var(--paper-2);
-  color: var(--ink);
 }
 
 /* 汉堡 */
@@ -252,4 +256,33 @@
     padding: 0 14px;
     font-size: 14px;
   }
+}
+
+
+/* ══ 悬停反馈：只在能悬停的设备上生效（见 site.css 同名说明） */
+@media (hover: hover) and (pointer: fine) {
+  .jn-nav a:hover,
+  .jn-nav button:hover {
+    border-bottom-color: var(--ink);
+  }
+  .jn-btn:hover {
+    background: var(--accent-ink);
+    border-color: var(--accent-ink);
+  }
+  .jn-btn-ghost:hover {
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+  .jn-drop-panel a:hover {
+    background: var(--paper-2);
+    color: var(--ink);
+  }
+}
+
+
+/* 移动菜单：每一项至少 44px 高（触屏目标下限），否则一列链接太密点错 */
+.jn-mobile a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
 }

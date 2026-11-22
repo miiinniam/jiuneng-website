@@ -1,8 +1,10 @@
-import common from '../content/zh/common';
-
-const f = common.footer;
+import { getCommon } from '../content';
+import { useLang } from './LangProvider';
 
 export default function Footer() {
+  const { lang } = useLang();
+  const common = getCommon(lang);
+  const f = common.footer;
   return (
     <footer className="jn-foot">
       <div className="jn-foot-grid">

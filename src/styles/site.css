@@ -52,11 +52,16 @@
   font-weight: 500;
   letter-spacing: 0.02em;
   cursor: pointer;
-  transition: background-color 120ms linear, border-color 120ms linear, color 120ms linear;
+  touch-action: manipulation;
+  transition:
+    background-color var(--dur-hover) var(--ease-enter),
+    border-color var(--dur-hover) var(--ease-enter),
+    color var(--dur-hover) var(--ease-enter),
+    transform var(--dur-press) var(--ease-enter);
 }
-.btn:hover {
-  background: var(--accent-ink);
-  border-color: var(--accent-ink);
+/* 按压反馈：手指按下的那 90ms 里必须有变化，否则按钮像没响应 */
+.btn:active {
+  transform: scale(0.98);
 }
 .btn:disabled {
   opacity: 0.55;
@@ -67,20 +72,10 @@
   color: var(--ink);
   border-color: var(--ink);
 }
-.btn-outline:hover {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--on-ink);
-}
 .btn-inverse {
   background: var(--on-ink);
   color: var(--ink);
   border-color: var(--on-ink);
-}
-.btn-inverse:hover {
-  background: var(--paper-2);
-  border-color: var(--paper-2);
-  color: var(--ink);
 }
 
 .arrow-link {
@@ -92,19 +87,13 @@
   color: var(--accent);
   font-size: var(--fs-small);
   font-weight: 500;
-  transition: color 120ms linear;
-}
-.arrow-link:hover {
-  color: var(--accent-ink);
+  transition: color var(--dur-hover) var(--ease-enter);
 }
 
 .inline-link {
   color: var(--accent);
   border-bottom: 1px solid currentColor;
-  transition: color 120ms linear;
-}
-.inline-link:hover {
-  color: var(--accent-ink);
+  transition: color var(--dur-hover) var(--ease-enter);
 }
 
 /* ── 页头 ─────────────────────────────────────────── */
@@ -234,6 +223,13 @@
   color: var(--ink-3);
 }
 
+/* 句点段本身就是一条带上下线的通栏；紧跟其后的索引条若再留 128px 外边距 + 自己的上边线，
+   会在两条墨线之间夹出一条空带（读起来像没做完的区块）。贴着句点段走，共用那条线。 */
+.tagline + .tool-strip {
+  margin-top: 0;
+  border-top: 0;
+}
+
 /* ── 工具入口条 ───────────────────────────────────── */
 .tool-strip {
   margin-top: var(--sp-10);
@@ -247,25 +243,33 @@
   gap: var(--sp-4);
   padding: var(--sp-5) 0 var(--sp-4);
 }
+/* 索引条右上的两个入口（在线报价 / 平台总览） */
+.strip-links {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+}
 .tool-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .tool {
   display: grid;
-  gap: var(--sp-3);
-  padding: var(--sp-5) var(--sp-6) var(--sp-5) 0;
-  transition: background-color 120ms linear;
+  gap: var(--sp-4);
+  padding: var(--sp-6) var(--sp-6) var(--sp-6) 0;
+  transition: background-color var(--dur-hover) var(--ease-enter);
 }
 .tool + .tool {
   border-left: 1px solid var(--rule);
   padding-left: var(--sp-6);
 }
-.tool:hover {
-  background: var(--paper-2);
+/* 编号行：索引带的定位点，读起来是"第几件工具"而不是列表圆点 */
+.tool-n {
+  color: var(--ink-3);
 }
 .tool-title {
-  font-size: var(--fs-h3);
+  font-size: clamp(1.25rem, 1.7vw, 1.625rem);
   line-height: 1.3;
   letter-spacing: -0.01em;
   font-weight: 600;
@@ -1151,5 +1155,767 @@
   }
   .stat:nth-child(n + 3) {
     border-top: 1px solid var(--rule);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   v8：照片主导的编辑版式
+   改动原因：拿到 67 张真实项目照片后，v7 的「文字年报 + 单张横幅照」
+   让照片退化成装饰。v8 把照片提到结构层：首屏右侧就是现场，
+   下面紧跟 4 张作业照，项目改图文对开。
+   仍然遵守 §视觉规范：圆角 0–2px、无投影、无渐变、不悬停位移。
+   ══════════════════════════════════════════════════════════════ */
+
+/* 图注 + 署名：署名是 CC BY 义务，不是装饰，所以固定在右侧同基线 */
+.figcap {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+.figcredit,
+.credit {
+  color: #8b909a;
+}
+
+/* ── Hero：5 / 7 对开 ─────────────────────────────── */
+.hero {
+  padding: var(--sp-8) 0 0;
+}
+.hero-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  column-gap: var(--sp-8);
+  align-items: start;
+}
+.hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  padding-top: var(--sp-2);
+}
+.hero-title {
+  font-size: clamp(2.1rem, 3.9vw, 3.6rem);
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  word-break: keep-all;
+}
+/* 两行标题各自成块（v10 起用 span 代替 <br>，供 GSAP 逐行入场） */
+.hero-t-line {
+  display: block;
+}
+.hero-lead {
+  max-width: 34ch;
+  font-size: var(--fs-body);
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+.hero-fig {
+  margin: 0;
+}
+.hero-fig img {
+  display: block;
+  width: 100%;
+  height: clamp(380px, 52vh, 600px);
+  object-fit: cover;
+  object-position: center;
+}
+.hero-cap {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--rule);
+  color: var(--ink-3);
+}
+.hero-cap-n {
+  color: #8b909a;
+}
+
+/* ── 现场照片带 ───────────────────────────────────── */
+.proof-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--ink);
+}
+.proof-note {
+  color: var(--ink-3);
+  text-align: right;
+}
+.proof-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-5);
+  margin-top: var(--sp-5);
+}
+.proof {
+  margin: 0;
+}
+.proof img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+}
+.proof figcaption {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}
+.proof .credit {
+  display: block;
+  margin-top: 2px;
+}
+
+/* ── 设备资源：3 张照片卡 ─────────────────────────── */
+.fleet-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-6);
+  margin-top: var(--sp-7);
+}
+.fleet-card {
+  margin: 0;
+}
+.fleet-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+}
+.fleet-title {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--ink);
+  font-size: var(--fs-h3);
+  letter-spacing: -0.01em;
+  font-weight: 600;
+  color: var(--ink);
+}
+.fleet-body {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.fleet-spec {
+  margin-top: var(--sp-3);
+  color: var(--ink-3);
+}
+
+/* ── 代表项目：图文对开 ───────────────────────────── */
+.proj-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-9);
+  margin-top: var(--sp-7);
+}
+.proj-row {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: var(--sp-7);
+  align-items: center;
+}
+.proj-row-r .proj-fig {
+  order: 2;
+}
+.proj-fig {
+  margin: 0;
+  /* moment 展开时图片会从 1.07 缩回 1，overflow 兜住缩放溢出的那一两像素 */
+  overflow: hidden;
+}
+.proj-fig img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+}
+.proj-fig figcaption {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--rule);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.proj-body {
+  padding-top: var(--sp-1);
+}
+.proj-type {
+  color: var(--ink-3);
+}
+.proj-title {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-h2);
+  line-height: 1.14;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  color: var(--ink);
+}
+.proj-text {
+  margin-top: var(--sp-4);
+  font-size: var(--fs-body);
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+.proj-body .arrow-link {
+  margin-top: var(--sp-5);
+}
+.proj-scope {
+  margin-top: var(--sp-5);
+}
+.proj-scope .lines li {
+  font-size: var(--fs-small);
+}
+.note-after {
+  margin-top: var(--sp-6);
+}
+
+/* ── 关于：图 + 中越两侧 ──────────────────────────── */
+.about-split {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: var(--sp-8);
+  margin-top: var(--sp-7);
+  align-items: stretch;
+}
+.about-fig {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+.about-fig img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  object-position: center 58%;
+  flex: 1;
+  min-height: 300px;
+}
+.about-fig figcaption {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--rule);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+.about-body {
+  margin-top: var(--sp-4);
+  font-size: var(--fs-body);
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+.about-copy .sides {
+  margin-top: var(--sp-6);
+}
+.about-copy .note {
+  margin-top: var(--sp-5);
+}
+.about-copy .arrow-link {
+  margin-top: var(--sp-4);
+}
+
+/* 使命 / 愿景 / 价值观压成一行四列，避免又拉出一屏文字墙 */
+.mvv-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-6) var(--sp-8);
+  margin-top: var(--sp-8);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--rule);
+}
+.values-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+  padding-top: var(--sp-5);
+}
+.values-row .value {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* ── 网络页：两侧口岸照片 ─────────────────────────── */
+.net-photos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-6);
+  margin-top: var(--sp-7);
+}
+.net-photo {
+  margin: 0;
+}
+.net-photo img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+}
+.net-photo figcaption {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--rule);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ── v8 窄屏 ──────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .proof-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .fleet-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .values-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .hero-inner,
+  .proj-row,
+  .about-split {
+    grid-template-columns: 1fr;
+    row-gap: var(--sp-6);
+  }
+  /* 两列事实格里「工程物流 · 报关 · 贸易」会被拆成「贸 / 易」两个孤字 */
+  .stat-l {
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+  }
+  .hero-fig {
+    order: -1;
+  }
+  .hero-fig img {
+    height: auto;
+    aspect-ratio: 3 / 2;
+  }
+  .proj-row-r .proj-fig {
+    order: 0;
+  }
+  .fleet-grid {
+    grid-template-columns: 1fr;
+  }
+  .proof-grid {
+    gap: var(--sp-4);
+  }
+  .proj-rows {
+    gap: var(--sp-8);
+  }
+  .mvv-row {
+    grid-template-columns: 1fr;
+  }
+  .proof-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-2);
+  }
+  .proof-note {
+    text-align: left;
+  }
+  .net-photos {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* ══ v9 项目分类（7 类图集 + 作业实录）══════════════════
+   一条素材只归一类：content.ts 的 photoCats 是唯一来源。
+   版式沿用 v8 的图文对开（7/5），照片不压字、不叠渐变、无圆角无阴影。 */
+
+/* 首页：7 类入口
+   12 列栅格：前 3 类各占 4 列（宽），后 4 类各占 3 列（窄）——
+   原来 4 列 × 2 行会在第二行留一个空格（7 个条目塞 8 格），空位读起来像没加载完。 */
+.cat-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--sp-5);
+  margin-top: var(--sp-5);
+}
+.cat-entry {
+  display: block;
+  grid-column: span 4;
+  color: inherit;
+  touch-action: manipulation;
+  transition: transform var(--dur-press) var(--ease-enter);
+}
+.cat-entry:nth-child(n + 4) {
+  grid-column: span 3;
+}
+/* 图不可压字、不可缩放（照片要保持真实），按压只下沉 1px 作反馈 */
+.cat-entry:active {
+  transform: translateY(1px);
+}
+.cat-entry img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+}
+.cat-entry-meta {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--ink);
+}
+/* 悬停时强调色从左侧长出，盖住原本的 1px 墨线（只动 transform） */
+.cat-entry-meta::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--dur-underline) var(--ease-enter);
+}
+.cat-entry-n {
+  color: var(--ink-3);
+}
+.cat-entry-name {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.cat-entry-count {
+  margin-left: auto;
+  color: var(--ink-3);
+}
+
+/* 项目页：分类锚点条 */
+.cat-index-wrap {
+  margin-top: var(--sp-7);
+}
+.cat-index {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-5);
+  padding: var(--sp-4) 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+.cat-index a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-height: 32px; /* 触屏目标下限：WCAG 2.2 target-size minimum = 24×24 CSS px */
+  padding: 6px 0;
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+  touch-action: manipulation;
+  transition: color var(--dur-hover) var(--ease-enter);
+}
+.cat-n,
+.cat-count {
+  color: var(--ink-3);
+}
+.cat-index-name {
+  word-break: keep-all;
+}
+
+/* 项目页：分类段 */
+.cat-block {
+  padding-top: var(--sp-9);
+}
+.cat-block + .cat-block {
+  margin-top: var(--sp-9);
+  border-top: 1px solid var(--rule);
+}
+.cat-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-5);
+  padding-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--ink);
+}
+.cat-sector {
+  color: var(--ink-3);
+}
+.cat-name {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-h2);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  color: var(--ink);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.cat-meta {
+  max-width: 44ch;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--ink-3);
+  text-align: right;
+}
+.cat-total {
+  color: var(--ink-2);
+}
+.cat-split {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: var(--sp-7);
+  align-items: start;
+  margin-top: var(--sp-6);
+}
+.cat-split-r .cat-fig {
+  order: 2;
+}
+.cat-fig {
+  margin: 0;
+}
+.cat-fig img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+}
+.cat-fig figcaption,
+.cat-thumb figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--rule);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+}
+.cat-body {
+  padding-top: var(--sp-1);
+}
+.cat-text {
+  font-size: var(--fs-body);
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+.cat-scope-label {
+  margin-top: var(--sp-5);
+  color: var(--ink-3);
+}
+.cat-lines li {
+  font-size: var(--fs-small);
+}
+.cat-note {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--rule);
+  color: var(--ink-3);
+}
+.cat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-5);
+  margin-top: var(--sp-6);
+}
+.cat-thumb {
+  margin: 0;
+}
+.cat-thumb img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+/* 项目页：作业实录 */
+.vid-section {
+  padding-top: var(--sp-9);
+}
+.vid-title {
+  margin-top: var(--sp-3);
+}
+.vid-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-5);
+  margin-top: var(--sp-6);
+}
+.vid {
+  margin: 0;
+}
+.vid-frame {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: var(--paper-3);
+}
+.vid figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--rule);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.vid-dur {
+  color: var(--ink-3);
+}
+
+/* ── v9 窄屏 ──────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .cat-entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* 窄屏回到等宽两列：12 列跨列规则必须复位，否则卡片只有 4 格宽 */
+  .cat-entry,
+  .cat-entry:nth-child(n + 4) {
+    grid-column: auto;
+  }
+  .cat-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .vid-strip {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .cat-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-2);
+  }
+  .cat-meta {
+    max-width: none;
+    text-align: left;
+  }
+  .cat-split,
+  .cat-split-r {
+    grid-template-columns: 1fr;
+    row-gap: var(--sp-5);
+  }
+  .cat-split-r .cat-fig {
+    order: 0;
+  }
+  .cat-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-4);
+  }
+  .cat-index {
+    gap: var(--sp-4);
+  }
+}
+
+
+/* ══ 悬停反馈：只在真正能悬停的设备上生效 ═══════════════
+   触屏上 :hover 会在点完之后粘住，颜色残留成假选中态；
+   @media (hover: hover) and (pointer: fine) 把它挡掉。
+   颜色一律 200ms ease（linear 变颜色读起来是机械的）。 */
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover {
+    background: var(--accent-ink);
+    border-color: var(--accent-ink);
+  }
+  .btn-outline:hover {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--on-ink);
+  }
+  .btn-inverse:hover {
+    background: var(--paper-2);
+    border-color: var(--paper-2);
+    color: var(--ink);
+  }
+  .arrow-link:hover {
+    color: var(--accent-ink);
+  }
+  .inline-link:hover {
+    color: var(--accent-ink);
+  }
+  .tool:hover {
+    background: var(--paper-2);
+  }
+  .cat-entry:hover .cat-entry-name {
+    color: var(--accent);
+  }
+  .cat-index a:hover {
+    color: var(--accent);
+  }
+
+  /* 分类入口：图不动，只让元信息行的强调色线由左生长 */
+  .cat-entry:hover .cat-entry-meta::after {
+    transform: scaleX(1);
+  }
+}
+
+
+/* ══ v9.3 句点段（tagline）════════════════════════════
+   大字陈述核心做法。初态 34% 中性色（不是 opacity:0），内容任何时刻可见；
+   只过渡 opacity；reduce 下直接终态。 */
+.tagline {
+  margin-top: var(--sp-9);
+  padding: var(--sp-9) 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+.tagline-lab {
+  color: var(--ink-3);
+}
+.tagline-t {
+  margin-top: var(--sp-4);
+  max-width: 19em;
+  font-size: clamp(1.625rem, 4.2vw, 3rem);
+  line-height: 1.26;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  color: var(--ink);
+}
+.tagline-line {
+  display: block;
+}
+/* 初态即终态：不写 opacity:0 / 0.28 这类"看不见"的初态。
+   逐块着色的低浓度初态由 GSAP 在 matchMedia(no-preference) 里临时设定（见 src/site/motion.ts），
+   JS 不跑（爬虫/截图/无 JS）时这三行就是实色可读。 */
+.tagline-w {
+  opacity: 1;
+}
+.tagline-note {
+  margin-top: var(--sp-5);
+  max-width: 40em;
+  color: var(--ink-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tagline-w {
+    opacity: 1;
   }
 }

@@ -108,9 +108,36 @@ textarea {
   background: var(--paper-2);
 }
 
+/* 中文长句别在末行只剩一个字：用 pretty（balance 在中文里会把词拆到两行） */
+p,
+li,
+dd,
+dt,
+figcaption,
+h1,
+h2,
+h3,
+.micro {
+  text-wrap: pretty;
+}
+
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+
+/* 分类锚点跳转要平滑，否则 7 段跳转后看不出落在哪一段。
+   点击发起、非键盘重复动作；prefers-reduced-motion: reduce 时下面的块会关掉。 */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* 粘性顶栏会盖住锚点目标与键盘焦点：给滚动容器留出顶栏高度
+   （WCAG 2.2「焦点不被遮挡」；[id] 上的 scroll-margin-top 只管锚点，管不了 Tab 聚焦） */
+html {
+  scroll-padding-top: 96px;
 }
 
 @media (max-width: 768px) {

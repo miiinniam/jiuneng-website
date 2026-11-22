@@ -3,13 +3,16 @@
  * 三句口径是**硬要求**：三个结果区都必须出现，逐字一致，不许改写。
  */
 import type { ReactNode } from 'react';
+import { getTools } from '../content';
+import { useLang } from '../shell/LangProvider';
 
 export const DISCLAIMER = ['初步测算', '非正式报价', '非时效承诺'] as const;
 
 export function Disclaim({ testId }: { testId?: string }) {
+  const { lang } = useLang();
   return (
     <ul className="t-disclaim" data-testid={testId}>
-      {DISCLAIMER.map((line) => (
+      {getTools(lang).disclaimer.map((line) => (
         <li key={line}>{line}</li>
       ))}
     </ul>

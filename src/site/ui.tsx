@@ -1,4 +1,6 @@
+import { useRef } from 'react';
 import type { ReactNode } from 'react';
+import { useEnter } from './motion';
 
 /** 文字链：4px 下划线偏移，hover 只变色不位移。 */
 export function ArrowLink({
@@ -32,15 +34,18 @@ export function PageHead({
   lead?: string;
   note?: string;
 }) {
+  const ref = useRef<HTMLElement | null>(null);
+  useEnter(ref);
+
   return (
-    <header className="page-head">
+    <header className="page-head" ref={ref}>
       <div className="wrap">
-        <p className="micro ph-kicker">
+        <p className="micro ph-kicker" data-enter="eyebrow">
           <span className="ph-n">{no}</span>
           <span>{kicker}</span>
         </p>
-        <h1 className="page-title">{title}</h1>
-        {lead ? <p className="lead page-lead">{lead}</p> : null}
+        <h1 className="page-title" data-enter="title-line">{title}</h1>
+        {lead ? <p className="lead page-lead" data-enter="lead">{lead}</p> : null}
         {note ? <p className="page-note">{note}</p> : null}
       </div>
     </header>

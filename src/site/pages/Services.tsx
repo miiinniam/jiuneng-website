@@ -2,17 +2,22 @@ import HairlineTable from '../HairlineTable';
 import PhotoFull from '../PhotoFull';
 import SectionHeader from '../SectionHeader';
 import { PageHead } from '../ui';
-import { labels, platform, services, solutions, vehicles } from '../content';
+import { getChrome, getSite } from '../../content';
+import { useLang } from '../../shell/LangProvider';
 
 export default function Services() {
+  const { lang } = useLang();
+  const ui = getChrome(lang);
+  const { labels, platform, services, solutions, vehicles } = getSite(lang);
+
   return (
     <>
-      <PageHead no="02" kicker="业务与服务" title={services.title} lead={services.intro} />
+      <PageHead no="02" kicker={ui.services.kicker} title={services.title} lead={services.intro} />
 
       {/* 三业务详版 */}
       <section className="section">
         <div className="wrap">
-          <SectionHeader no="01" title="三类业务的边界与交付" lead="每条业务写明定义、要点、适用货物与交付边界，避免把供应链上说不到的事写进来。" />
+          <SectionHeader no="01" title={ui.services.headTitle} lead={ui.services.headLead} />
 
           <div className="svc-rows">
             {services.items.map((s) => (
@@ -38,7 +43,7 @@ export default function Services() {
           </div>
 
           <p className="callout">
-            <span className="micro">合规说明</span>
+            <span className="micro">{ui.compliance}</span>
             {services.compliance}
           </p>
         </div>
@@ -49,7 +54,7 @@ export default function Services() {
         <div className="wrap">
           <SectionHeader no="02" title={platform.title} lead={platform.intro} />
 
-          <h3 className="sub-title">{labels.steps} · 12 步</h3>
+          <h3 className="sub-title">{labels.steps} · {ui.services.stepsSuffix}</h3>
           <ol className="steps">
             {platform.steps.map((s, i) => (
               <li className="step" data-testid="step-item" key={s}>
@@ -59,10 +64,10 @@ export default function Services() {
             ))}
           </ol>
 
-          <h3 className="sub-title sub-title-gap">{labels.modules} · 5 个</h3>
+          <h3 className="sub-title sub-title-gap">{labels.modules} · {ui.services.modulesSuffix}</h3>
           <HairlineTable
             className="modules"
-            head={['模块', '记录内容']}
+            head={ui.services.modulesHead}
             groups={[
               {
                 rows: platform.modules.map((m) => ({
@@ -74,9 +79,9 @@ export default function Services() {
           />
 
           <div className="end-row">
-            <h2 className="end-title">四项在线工具，从测算到车辆匹配</h2>
+            <h2 className="end-title">{ui.services.endTitle}</h2>
             <a className="btn btn-outline" href="/platform">
-              平台总览
+              {ui.services.endLink}
             </a>
           </div>
         </div>
@@ -100,7 +105,7 @@ export default function Services() {
                 <p className="micro ind-sector">{it.sector}</p>
                 <h3 className="ind-title">{it.title}</h3>
                 <p className="ind-body">{it.body}</p>
-                <p className="ind-fit">适用：{it.fit}</p>
+                <p className="ind-fit">{ui.services.fitPrefix}{it.fit}</p>
               </article>
             ))}
           </div>
@@ -123,9 +128,9 @@ export default function Services() {
           </div>
 
           <div className="end-row">
-            <h2 className="end-title">把货物尺寸与交付时间发来，我们按项目匹配车辆</h2>
+            <h2 className="end-title">{ui.services.ctaTitle}</h2>
             <a className="btn" href="/contact">
-              提交询价
+              {ui.submitQuote}
             </a>
           </div>
         </div>

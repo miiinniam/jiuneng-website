@@ -10,7 +10,16 @@
  *     因此在返回值里表达，不抛异常。
  */
 
+import { getTools } from '../content';
+import type { Lang } from '../shell/i18n';
+
 export const REQUEST_TIMEOUT_MS = 75_000;
+
+/* 当前语言（LangProvider 挂载/切换时写入），让非组件层错误文案跟着走 */
+let apiLang: Lang = 'zh';
+export function setApiLang(lang: Lang) {
+  apiLang = lang;
+}
 
 export class ApiError extends Error {
   readonly reason: string;
@@ -55,7 +64,15 @@ const REASON_TEXT: Record<string, string> = {
   bad_response: '服务器返回格式异常，请稍后重试。',
 };
 
-export function reasonText(reason: string): string {
+export function reasonText(reason: string, lang: Lang = apiLang): string {
+  if (lang !== 'zh') {
+    const t = getTools(lang).api as Record<string, string>;
+    if (t[reason]) return t[reason];
+    if (/^status_5\d\d$/.test(reason)) return t.status5xx;
+    if (/^status_4\d\d$/.test(reason)) return t.status4xx;
+    if (/^status_/.test(reason)) return t.statusOther;
+    return t.fallback;
+  }
   if (REASON_TEXT[reason]) return REASON_TEXT[reason];
   if (/^status_5\d\d$/.test(reason)) return '测算引擎暂时不可用，请稍后重试；也可直接提交询价。';
   if (/^status_4\d\d$/.test(reason)) return '本次请求未被受理，请检查填写内容后重试。';
@@ -64,10 +81,15 @@ export function reasonText(reason: string): string {
 }
 
 /** 任何异常 → 客户可读中文（界面只显示这个）。 */
-export function errorText(err: unknown): string {
-  if (err instanceof ApiError) return err.message;
-  if (err instanceof Error && err.name === 'AbortError') return REASON_TEXT.timeout;
-  return REASON_TEXT.network;
+export function errorText(err: unknown, lang: Lang = apiLang): string {
+  if (err instanceof ApiError) {
+    // 服务端 note 只有中文；非中文界面一律走本地语言包
+    if (lang === 'zh') return err.message;
+    return reasonText(err.reason, lang);
+  }
+  const t = getTools(lang).api;
+  if (err instanceof Error && err.name === 'AbortError') return t.timeout;
+  return t.network;
 }
 
 /* ── 传输层 ─────────────────────────────────────────────────── */

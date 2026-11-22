@@ -2,22 +2,27 @@ import HairlineTable from '../HairlineTable';
 import PhotoFull from '../PhotoFull';
 import SectionHeader from '../SectionHeader';
 import { PageHead } from '../ui';
-import { about } from '../content';
+import { getChrome, getSite } from '../../content';
+import { useLang } from '../../shell/LangProvider';
 
 export default function About() {
+  const { lang } = useLang();
+  const ui = getChrome(lang);
+  const { about } = getSite(lang);
+
   return (
     <>
       <PageHead
         no="04"
-        kicker="关于与网络"
+        kicker={ui.about.kicker}
         title={about.title}
-        lead="越南河内登记主体，中国侧由广西玖一进出口贸易有限公司提供进出口与报关支持。"
+        lead={ui.aboutLead}
       />
 
       {/* 公司介绍 */}
       <section className="section">
         <div className="wrap">
-          <SectionHeader no="01" title="公司介绍" />
+          <SectionHeader no="01" title={ui.about.intro} />
           <div className="two-col">
             <p className="lead">{about.body[0]}</p>
             <p>{about.body[1]}</p>
@@ -28,7 +33,7 @@ export default function About() {
       {/* 使命 / 愿景 / 价值观 */}
       <section className="section">
         <div className="wrap">
-          <SectionHeader no="02" title="使命、愿景与价值观" />
+          <SectionHeader no="02" title={ui.about.mvv} />
           <div className="mvv">
             <div className="mvv-item">
               <p className="micro">{about.mission.label}</p>
@@ -40,7 +45,7 @@ export default function About() {
             </div>
           </div>
 
-          <h3 className="sub-title sub-title-gap">{about.valuesTitle} · 4 条</h3>
+          <h3 className="sub-title sub-title-gap">{about.valuesTitle} · {ui.about.valuesSuffix}</h3>
           <ul className="values">
             {about.values.map((v, i) => (
               <li className="value" data-testid="value-item" key={v.name}>
@@ -77,14 +82,32 @@ export default function About() {
               </div>
             ))}
           </div>
+
+          <div className="net-photos">
+            {about.network.photos.map((p) => (
+              <figure className="net-photo" key={p.src}>
+                <img src={p.src} alt={p.alt} loading="lazy" decoding="async" />
+                <figcaption>
+                  {p.caption}
+                  <span className="credit">{p.credit}</span>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
           <p className="callout">
-            <span className="micro">合规说明</span>
+            <span className="micro">{ui.compliance}</span>
             {about.network.note}
           </p>
         </div>
       </section>
 
-      <PhotoFull src={about.photo.src} alt={about.photo.alt} caption={about.photo.caption} ratio="21/9" />
+      <PhotoFull
+        src={about.photo.src}
+        alt={about.photo.alt}
+        caption={about.photo.caption}
+        credit={about.photo.credit}
+        ratio="21/9"
+      />
 
       {/* 企业登记 */}
       <section className="section section-end">
@@ -97,12 +120,12 @@ export default function About() {
           <HairlineTable
             testId="entity-table"
             groups={about.registry.groups}
-            head={['项目', '登记信息']}
+            head={ui.about.registryHead}
           />
           <div className="end-row">
-            <h2 className="end-title">需要营业执照或登记文件复印件？</h2>
+            <h2 className="end-title">{ui.about.endTitle}</h2>
             <a className="btn" href="/contact">
-              联系我们
+              {ui.about.contact}
             </a>
           </div>
         </div>

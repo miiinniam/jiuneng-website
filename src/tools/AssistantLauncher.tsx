@@ -15,6 +15,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import '../styles/tools-assistant.css';
 import { useLang } from '../shell/LangProvider';
+import { getAssistant, getCommon } from '../content';
+import type { AssistantCopy } from '../content/zh/assistant';
 import { chatFallbackError, streamChat } from './chat';
 
 type Action = { label: string; href?: string; prompt?: string };
@@ -30,22 +32,13 @@ const STORE_KEY = 'jn-assistant-v1';
 const HEIGHT_KEY = 'jn-assistant-h';
 const MAX_KEPT = 40;
 
-const SUGGESTIONS = [
-  '报价需要准备哪些资料？',
-  '报价包含哪些费用？',
-  '客服联系方式是什么？',
-];
-
-const EMPTY_INTRO =
-  '可以直接问报价要准备什么资料、报价里含哪些费用，或怎么联系客服；也可以给线路、货重与体积，我按站内测算引擎出里程、车数与参考区间。正式价格与时效由项目经理核定。';
-
 /** 每条回答后能点的「下一步」——按本轮真正调用过的工具决定，不猜。 */
-function actionsFor(tools: Set<string>): Action[] {
+function actionsFor(tools: Set<string>, a: AssistantCopy): Action[] {
   const acts: Action[] = [];
-  if (tools.has('quote_customs_range')) acts.push({ label: '看分项明细', href: '/platform/customs' });
-  if (tools.has('query_route_cost')) acts.push({ label: '换车型重算', prompt: '按整车、低平板 17.5 米重算一次' });
-  if (tools.has('match_vehicles')) acts.push({ label: '打开车辆匹配', href: '/platform/fleet' });
-  acts.push({ label: '提交正式询价', href: '/contact' });
+  if (tools.has('quote_customs_range')) acts.push({ label: a.actions.docDetail, href: '/platform/customs' });
+  if (tools.has('query_route_cost')) acts.push({ label: a.actions.reMatch, prompt: a.actions.reMatchPrompt });
+  if (tools.has('match_vehicles')) acts.push({ label: a.actions.vehicleMatch, href: '/platform/fleet' });
+  acts.push({ label: a.actions.submitQuote, href: '/contact' });
   return acts;
 }
 
@@ -97,12 +90,18 @@ function loadMsgs(): Msg[] {
   }
 }
 
+type StatusState =
+  | { key: 'idle' | 'reading' | 'callingGeneric' | 'none' }
+  | { key: 'calling'; label?: string }
+  | { key: 'summary'; text?: string };
+
 export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
   const { lang } = useLang();
+  const a = getAssistant(lang);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('尚未调用测算工具');
+  const [status, setStatus] = useState<StatusState>({ key: 'idle' });
   const [error, setError] = useState('');
   const listRef = useRef<HTMLDivElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -135,13 +134,13 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
 
   // 恢复历史后不要把「尚未调用测算工具」一直挂在状态条上
   useEffect(() => {
-    if (msgs.length > 0) setStatus('');
+    if (msgs.length > 0) setStatus({ key: 'none' });
   }, [msgs.length]);
 
   const clear = useCallback(() => {
     abortRef.current?.abort();
     setMsgs([]);
-    setStatus('尚未调用测算工具');
+    setStatus({ key: 'idle' });
     setError('');
     try {
       window.localStorage.removeItem(STORE_KEY);
@@ -163,7 +162,7 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
       setInput('');
       setError('');
       setBusy(true);
-      setStatus('正在解读问题…');
+      setStatus({ key: 'reading' });
       setMsgs((prev) => [...prev, { id: nextId(), kind: 'user', text: question }]);
 
       const ctrl = new AbortController();
@@ -193,26 +192,26 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
               );
             } else if (event.type === 'tool_start') {
               if (event.name) usedTools.add(event.name);
-              setStatus(event.label ? `正在调用：${event.label}` : '正在调用测算工具…');
+              setStatus(event.label ? { key: 'calling', label: event.label } : { key: 'callingGeneric' });
             } else if (event.type === 'tool_done') {
               if (event.name) usedTools.add(event.name);
-              setStatus(event.summary || '测算工具已返回结果');
+              setStatus({ key: 'summary', text: event.summary });
             } else if (event.type === 'error') {
-              setError(event.message || chatFallbackError);
+              setError(event.message || chatFallbackError(lang));
             }
           },
         });
         if (assistantId === null) {
-          setError(chatFallbackError);
+          setError(chatFallbackError(lang));
         } else {
           // 回答结束就挂上「下一步」：指向真正用得上的那一页/那一次重算
           const id = assistantId;
-          const actions = actionsFor(usedTools);
+          const actions = actionsFor(usedTools, a);
           setMsgs((prev) => prev.map((m) => (m.id === id && m.kind === 'assistant' ? { ...m, actions } : m)));
         }
       } catch (err) {
         if (!(err instanceof Error && err.name === 'AbortError')) {
-          setError(chatFallbackError);
+          setError(chatFallbackError(lang));
         }
       } finally {
         setBusy(false);
@@ -227,6 +226,19 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
     void send(input);
   };
 
+  const statusText =
+    status.key === 'idle'
+      ? a.status.idle
+      : status.key === 'reading'
+        ? a.status.reading
+        : status.key === 'calling'
+          ? a.status.calling.replace('{label}', status.label ?? '')
+          : status.key === 'callingGeneric'
+            ? a.status.callingGeneric
+            : status.key === 'summary'
+              ? status.text || a.status.done
+              : '';
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
@@ -239,7 +251,7 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
       {msgs.length > 0 ? (
         <div className="tc-tools">
           <button type="button" className="t-link" onClick={clear} data-testid="chat-clear">
-            清空对话
+            {a.ui.clear}
           </button>
         </div>
       ) : null}
@@ -247,9 +259,9 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
       <div className="tc-list" ref={listRef}>
         {msgs.length === 0 ? (
           <div className="tc-intro">
-            <p className="tc-p">{EMPTY_INTRO}</p>
+            <p className="tc-p">{a.intro}</p>
             <ul className="tc-sugs">
-              {SUGGESTIONS.map((line) => (
+              {a.suggestions.map((line) => (
                 <li key={line}>
                   <button type="button" className="tc-sug" onClick={() => void send(line)} disabled={busy}>
                     {line}
@@ -262,7 +274,7 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
           msgs.map((m) => (
             <div key={m.id} className="tc-row">
               <div className={`tc-msg tc-${m.kind}`} data-testid="chat-bubble" data-kind={m.kind}>
-                {m.text ? renderText(m.text) : <span className="tc-typing">正在整理…</span>}
+                {m.text ? renderText(m.text) : <span className="tc-typing">{a.ui.typing}</span>}
               </div>
               {m.kind === 'assistant' && m.actions?.length ? (
                 <div className="tc-acts" data-testid="chat-actions">
@@ -292,7 +304,7 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
 
       {msgs.length > 0 ? (
         <p className="tc-status" data-testid="chat-tool-status" aria-live="polite">
-          {status}
+          {statusText}
         </p>
       ) : null}
 
@@ -307,24 +319,26 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
           className="tc-input"
           rows={2}
           value={input}
-          placeholder="例如：南宁 → 河内，20 吨，整车"
+          placeholder={a.ui.placeholder}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           disabled={busy}
-          aria-label="向测算助手提问"
+          aria-label={a.ui.askAria}
         />
         <button type="submit" className="t-btn tc-send" disabled={busy || !input.trim()}>
-          {busy ? '整理中…' : '发送'}
+          {busy ? a.ui.sending : a.ui.send}
         </button>
       </form>
 
-      <p className="tc-note">初步测算 · 非正式报价 · 非时效承诺</p>
+      <p className="tc-note">{a.ui.note}</p>
     </div>
   );
 }
 
 /** 全站悬浮入口：默认收起，展开时隐藏悬浮按钮。面板高度可拖拽并记忆。 */
 export default function AssistantLauncher() {
+  const { lang } = useLang();
+  const c = getCommon(lang).assistant;
   const [open, setOpen] = useState(false);
   const [height, setHeight] = useState(620);
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
@@ -388,14 +402,14 @@ export default function AssistantLauncher() {
         <section
           className="tc-panel"
           role="dialog"
-          aria-label="测算助手"
+          aria-label={c.fab}
           data-testid="chat-panel"
           style={{ height: `${height}px` }}
         >
           <div
             className="tc-grip"
             role="separator"
-            aria-label="调整面板高度"
+            aria-label={c.grip}
             onPointerDown={onGripDown}
             onPointerMove={onGripMove}
             onPointerUp={onGripUp}
@@ -403,10 +417,10 @@ export default function AssistantLauncher() {
           />
           <header className="tc-head">
             <div>
-              <p className="micro">测算助手</p>
-              <p className="tc-sub">里程 · 车型 · 单证方向</p>
+              <p className="micro">{c.title}</p>
+              <p className="tc-sub">{c.sub}</p>
             </div>
-            <button type="button" className="t-close" onClick={() => setOpen(false)} aria-label="收起助手">
+            <button type="button" className="t-close" onClick={() => setOpen(false)} aria-label={c.close}>
               ✕
             </button>
           </header>
@@ -416,7 +430,7 @@ export default function AssistantLauncher() {
 
       {open ? null : (
         <button type="button" className="tc-fab" data-testid="chat-toggle" onClick={() => setOpen(true)} aria-expanded={open}>
-          测算助手
+          {c.fab}
         </button>
       )}
     </div>

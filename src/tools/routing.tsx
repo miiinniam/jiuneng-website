@@ -3,17 +3,21 @@ import '../styles/tools.css';
 import RoutingForm from './RoutingForm';
 import AssistantLauncher from './AssistantLauncher';
 import { ToolHeader } from './parts';
+import { getTools } from '../content';
+import { useLang } from '../shell/LangProvider';
 
 function Routing() {
+  const { lang } = useLang();
+  const t = getTools(lang);
   return (
     <>
       <ToolHeader
-        index="平台 01 / 线路测算"
-        title="线路与运价测算"
-        lead="选起点与终点，填货重与体积，得到中越陆运里程、预计行驶时长、所需车数和参考运费区间。区间来自站内测算引擎，不是报价。"
+        index={t.routing.index}
+        title={t.routing.title}
+        lead={t.routing.lead}
         aside={
           <p className="t-hero-note">
-            可测城市为固定清单（中国 9 个、越南 5 个）；清单外地址请走<a href="/contact">在线询价</a>。
+            {t.routing.asidePre}<a href="/contact">{t.nav.contactLink}</a>{t.routing.asidePost}
           </p>
         }
       />
@@ -22,17 +26,17 @@ function Routing() {
         <RoutingForm />
       </div>
 
-      <nav className="t-cross" aria-label="其他工具">
-        <p className="micro">继续</p>
+      <nav className="t-cross" aria-label={t.nav.crossAria}>
+        <p className="micro">{t.nav.continue}</p>
         <ul>
           <li>
-            <a href="/platform/customs">02 报关与税费 →</a>
+            <a href="/platform/customs">{t.nav.toCustoms}</a>
           </li>
           <li>
-            <a href="/platform/fleet">03 车辆匹配与超限 →</a>
+            <a href="/platform/fleet">{t.nav.toFleet}</a>
           </li>
           <li>
-            <a href="/platform/assistant">04 测算助手 →</a>
+            <a href="/platform/assistant">{t.nav.toAssistant}</a>
           </li>
         </ul>
       </nav>

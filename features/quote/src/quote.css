@@ -1,0 +1,1390 @@
+/* 报价功能 · 向导 + 结果面板（C 代理所有）
+   规则（CONTRACT §7）：只用 .q- 前缀类名、只引 tokens.css 变量、圆角 0、无 box-shadow、
+   无渐变、悬停只在 (hover:hover) and (pointer:fine) 内且只变色、reduce 动效下无过渡。
+   可以复用全局 .wrap .btn .btn-outline .micro .arrow-link。 */
+
+/* ────────────────────────── 页面壳 ────────────────────────── */
+
+.q-app {
+  padding-bottom: var(--sp-9);
+}
+
+.q-head {
+  padding: var(--sp-9) 0 0;
+}
+
+.q-head-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.q-kicker {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin: 0;
+}
+
+.q-kicker-n {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.q-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.q-key-state {
+  color: var(--ink-3);
+}
+
+.q-ai-btn {
+  min-height: 44px;
+}
+
+.q-title {
+  max-width: 20ch;
+  margin-top: var(--sp-5);
+  font-size: var(--fs-h1);
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+}
+
+.q-lead {
+  max-width: 56ch;
+  margin-top: var(--sp-5);
+  font-size: var(--fs-lead);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.q-head-note {
+  max-width: 62ch;
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--rule);
+}
+
+.q-main {
+  padding-top: var(--sp-7);
+}
+
+/* 向导与结果共用同一内容列：步骤条、表单、结果左缘对齐 */
+.q-wizard {
+  max-width: 1080px;
+}
+
+.q-tpl-slot {
+  margin-bottom: var(--sp-5);
+}
+
+.q-batch-slot {
+  margin-top: var(--sp-8);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--rule);
+}
+
+/* ────────────────────────── 步骤条 ──────────────────────────
+   编号 micro 字阶 + 当前步实色 + 未到步 60% 灰 + 步骤间发丝线 */
+
+.q-stepbar {
+  border-top: 1px solid var(--ink);
+}
+
+.q-stepbar-list {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.q-step {
+  flex: 1 0 auto;
+  min-width: 132px;
+  border-right: 1px solid var(--rule);
+}
+
+.q-step:last-child {
+  border-right: 0;
+}
+
+.q-step-btn {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 56px;
+  padding: var(--sp-3) var(--sp-4);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink-3);
+  transition: color var(--dur-hover) var(--ease-enter),
+    border-color var(--dur-hover) var(--ease-enter);
+}
+
+.q-step-n {
+  color: inherit;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}
+
+.q-step-l {
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: inherit;
+}
+
+.q-step.is-current .q-step-btn {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  cursor: default;
+}
+
+.q-step.is-current .q-step-n {
+  color: var(--accent);
+}
+
+.q-step.is-done .q-step-btn {
+  color: var(--ink-2);
+}
+
+.q-step.is-todo .q-step-btn {
+  color: var(--ink-3);
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ────────────────────────── 步骤内容 ────────────────────────── */
+
+.q-panel {
+  padding-top: var(--sp-6);
+}
+
+.q-step-body {
+  display: grid;
+  gap: var(--sp-6);
+  max-width: 980px;
+}
+
+.q-grid {
+  display: grid;
+  gap: var(--sp-5);
+}
+
+.q-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.q-grid-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-4);
+}
+
+.q-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.q-inline > .q-input {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+}
+
+.q-inline > .q-unit {
+  flex: 0 0 auto;
+}
+
+.q-sub-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.q-sub-head .micro {
+  margin: 0;
+}
+
+.q-sub-note {
+  color: var(--ink-3);
+}
+
+.q-note {
+  max-width: 62ch;
+  margin: 0;
+  font-size: var(--fs-small);
+  line-height: 1.65;
+  color: var(--ink-2);
+  text-transform: none;
+}
+
+.q-note.micro {
+  font-size: var(--fs-micro);
+  line-height: 1.55;
+  color: var(--ink-3);
+}
+
+/* ────────────────────────── 字段 ────────────────────────── */
+
+.q-field {
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.q-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.q-field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin: 0;
+  color: var(--ink-3);
+}
+
+.q-field-hint {
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.q-req {
+  margin-left: 2px;
+  color: var(--accent);
+}
+
+.q-input,
+.q-select {
+  width: 100%;
+  height: 48px;
+  padding: var(--sp-2) 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  color: var(--ink);
+  font-size: var(--fs-body);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.q-select {
+  padding-right: var(--sp-2);
+}
+
+.q-input::placeholder,
+.q-select:disabled {
+  color: var(--ink-3);
+}
+
+.q-input:focus,
+.q-select:focus {
+  outline: none;
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: calc(var(--sp-2) - 1px);
+}
+
+.q-field-error {
+  margin: 0;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--accent-ink);
+}
+
+/* ── 分段选择（整车 / 拼货） ── */
+
+.q-choice {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  border: 1px solid var(--rule);
+}
+
+.q-choice-btn {
+  display: grid;
+  gap: var(--sp-1);
+  min-height: 64px;
+  padding: var(--sp-3) var(--sp-4);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--rule);
+  border-radius: 0;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+  transition: background-color var(--dur-hover) var(--ease-enter),
+    color var(--dur-hover) var(--ease-enter);
+}
+
+.q-choice-btn:last-child {
+  border-right: 0;
+}
+
+.q-choice-t {
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+
+.q-choice-h {
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+.q-choice-btn.is-on {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.q-choice-btn.is-on .q-choice-h {
+  color: var(--on-ink-2);
+}
+
+/* ── 单位切换（吨 / 公斤） ── */
+
+.q-unit {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+}
+
+.q-unit-btn {
+  min-width: 56px;
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur-hover) var(--ease-enter),
+    background-color var(--dur-hover) var(--ease-enter);
+}
+
+.q-unit-btn.is-on {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+/* ── 开关 ── */
+
+.q-switch-list {
+  display: grid;
+  border-top: 1px solid var(--rule);
+}
+
+.q-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  width: 100%;
+  min-height: 52px;
+  padding: var(--sp-3) 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.q-switch-box {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  border: 1px solid var(--ink-3);
+  border-radius: 0;
+  font-size: var(--fs-micro);
+  line-height: 1;
+  color: var(--on-ink);
+}
+
+.q-switch.is-on .q-switch-box {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.q-switch-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.q-switch-l {
+  font-size: var(--fs-small);
+  color: var(--ink);
+  transition: color var(--dur-hover) var(--ease-enter);
+}
+
+.q-switch-d {
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+/* ────────────────────────── 地址搜索 ────────────────────────── */
+
+.q-addr {
+  position: relative;
+}
+
+.q-addr-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.q-addr-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.q-addr-state {
+  flex: 0 0 auto;
+  color: var(--ink-3);
+}
+
+.q-addr-none {
+  margin-top: var(--sp-2);
+  color: var(--ink-3);
+}
+
+.q-suggest {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.q-suggest-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 48px;
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+
+.q-suggest li:last-child .q-suggest-item {
+  border-bottom: 0;
+}
+
+.q-suggest-l {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.q-suggest-k {
+  flex: 0 0 auto;
+}
+
+/* ────────────────────────── 路线 ────────────────────────── */
+
+.q-route-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-6);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--ink);
+}
+
+.q-route-point {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.q-waypoints,
+.q-items,
+.q-vehicles {
+  display: grid;
+  gap: var(--sp-3);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--rule);
+}
+
+.q-waypoint {
+  display: grid;
+  gap: var(--sp-3);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--rule);
+}
+
+.q-waypoint-head,
+.q-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.q-waypoint-head .micro,
+.q-item-head .micro {
+  color: var(--ink-2);
+}
+
+.q-add {
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  color: var(--accent);
+  font-size: var(--fs-small);
+  cursor: pointer;
+  transition: color var(--dur-hover) var(--ease-enter),
+    border-color var(--dur-hover) var(--ease-enter);
+}
+
+.q-x {
+  min-height: 44px;
+  padding: 0 var(--sp-2);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-small);
+  cursor: pointer;
+  transition: color var(--dur-hover) var(--ease-enter);
+}
+
+.q-map-slot {
+  display: grid;
+  gap: var(--sp-3);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--ink);
+}
+
+/* ────────────────────────── 单件明细 ────────────────────────── */
+
+.q-item {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4) 0;
+  border-top: 1px solid var(--rule);
+}
+
+/* ────────────────────────── 车型选择 ────────────────────────── */
+
+.q-vgroup {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.q-vgroup-t {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.q-vlist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+
+.q-vrow {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 52px;
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-hover) var(--ease-enter),
+    border-color var(--dur-hover) var(--ease-enter);
+}
+
+.q-vrow.is-on {
+  background: var(--paper-2);
+  border-left-color: var(--accent);
+}
+
+.q-vrow-mark {
+  color: var(--ink-3);
+}
+
+.q-vrow.is-on .q-vrow-mark {
+  color: var(--accent);
+}
+
+.q-vrow-name {
+  font-size: var(--fs-small);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.q-vrow-fit {
+  margin-left: var(--sp-2);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.q-vrow-spec {
+  color: var(--ink-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.q-vrow-sep {
+  margin: 0 var(--sp-1);
+  color: var(--ink-3);
+}
+
+.q-consol {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-4) 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+
+.q-consol-t {
+  font-size: var(--fs-h3);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ────────────────────────── 导航与状态 ────────────────────────── */
+
+.q-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  margin-top: var(--sp-7);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--ink);
+}
+
+.q-nav-btns {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.q-reset {
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  border-radius: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-small);
+  cursor: pointer;
+  transition: color var(--dur-hover) var(--ease-enter);
+}
+
+.q-hint {
+  margin-top: var(--sp-4);
+  font-size: var(--fs-small);
+  color: var(--accent-ink);
+}
+
+.q-loading {
+  margin-top: var(--sp-4);
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--accent);
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+}
+
+.q-error {
+  display: grid;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent-ink);
+}
+
+.q-error-tag {
+  color: var(--accent-ink);
+}
+
+.q-error-msg {
+  font-size: var(--fs-small);
+  color: var(--ink);
+}
+
+.q-retry {
+  justify-self: start;
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--accent);
+  border-radius: 0;
+  color: var(--accent);
+  font-size: var(--fs-small);
+  cursor: pointer;
+  transition: color var(--dur-hover) var(--ease-enter),
+    border-color var(--dur-hover) var(--ease-enter);
+}
+
+/* ────────────────────────── 内部口令 ────────────────────────── */
+
+.q-gate {
+  display: grid;
+  gap: var(--sp-3);
+  margin-top: var(--sp-6);
+  padding: var(--sp-5) 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+
+.q-gate-t {
+  font-size: var(--fs-h3);
+  letter-spacing: -0.01em;
+}
+
+.q-gate-form {
+  display: grid;
+  gap: var(--sp-4);
+  max-width: 440px;
+}
+
+.q-gate-actions {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+/* ────────────────────────── 结果面板 ────────────────────────── */
+
+.q-results {
+  max-width: 1080px;
+  margin-top: var(--sp-9);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--ink);
+  scroll-margin-top: 96px;
+}
+
+.q-results-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.q-link {
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  border-radius: 0;
+  color: var(--accent);
+  font-size: var(--fs-small);
+  cursor: pointer;
+  transition: color var(--dur-hover) var(--ease-enter);
+}
+
+.q-result {
+  display: grid;
+  gap: var(--sp-6);
+  margin-top: var(--sp-5);
+}
+
+.q-result-kicker {
+  color: var(--ink-2);
+}
+
+/* 事实行：上粗线 + 竖发丝线（与首页 .stat-row 同构，但不复用别段的类名） */
+.q-stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+
+.q-stat {
+  min-width: 0;
+  padding: var(--sp-4) var(--sp-4) var(--sp-5) 0;
+}
+
+.q-stat + .q-stat {
+  padding-left: var(--sp-4);
+  border-left: 1px solid var(--rule);
+}
+
+.q-stat-l {
+  margin: 0 0 var(--sp-2);
+}
+
+.q-stat-v {
+  margin: 0;
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.q-stat-u {
+  font-size: var(--fs-small);
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+/* 公开版价格区 */
+.q-price {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-5) 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+
+.q-price-v {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  font-size: clamp(1.5rem, 3vw, 2.25rem);
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.q-price-dash {
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+.q-price-pending {
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.q-price-cta {
+  justify-self: start;
+}
+
+/* 内部版发丝线表格 */
+.q-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-top: 1px solid var(--ink);
+  table-layout: fixed;
+}
+
+.q-table-cap {
+  padding-bottom: var(--sp-3);
+  text-align: left;
+  color: var(--ink-2);
+}
+
+.q-table th,
+.q-table td {
+  padding: var(--sp-3) var(--sp-4) var(--sp-3) 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: baseline;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.q-table thead th {
+  padding-top: 0;
+  padding-bottom: var(--sp-3);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.q-table tbody th {
+  font-size: var(--fs-small);
+  color: var(--ink-3);
+  padding-right: var(--sp-5);
+}
+
+.q-table td {
+  font-size: var(--fs-body);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.q-table .q-tr-group th {
+  padding-top: var(--sp-6);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--ink);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.q-table tr.is-strong th {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.q-table tr.is-strong td {
+  font-weight: 600;
+  border-bottom: 1px solid var(--ink);
+}
+
+/* ────────────────────────── 悬停（仅精确指针） ────────────────────────── */
+
+@media (hover: hover) and (pointer: fine) {
+  .q-step.is-done .q-step-btn:hover {
+    color: var(--accent);
+  }
+
+  .q-choice-btn:hover {
+    background: var(--paper-2);
+  }
+
+  .q-choice-btn.is-on:hover {
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+
+  .q-unit-btn:hover {
+    color: var(--ink);
+  }
+
+  .q-unit-btn.is-on:hover {
+    color: var(--on-ink);
+  }
+
+  .q-switch:hover .q-switch-l {
+    color: var(--accent-ink);
+  }
+
+  .q-suggest-item:hover {
+    background: var(--paper-2);
+  }
+
+  .q-add:hover {
+    border-color: var(--ink);
+    color: var(--accent-ink);
+  }
+
+  .q-x:hover,
+  .q-reset:hover {
+    color: var(--ink);
+  }
+
+  .q-link:hover,
+  .q-retry:hover {
+    color: var(--accent-ink);
+  }
+
+  .q-vrow:hover {
+    background: var(--paper-2);
+  }
+
+  .q-ai-btn:hover {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--on-ink);
+  }
+}
+
+/* ────────────────────────── 平板 / 手机 ────────────────────────── */
+
+@media (max-width: 1024px) {
+  .q-route-pair {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-5);
+  }
+}
+
+@media (max-width: 700px) {
+  .q-head {
+    padding-top: var(--sp-7);
+  }
+
+  .q-grid-2,
+  .q-grid-4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .q-step {
+    min-width: 108px;
+  }
+
+  .q-step-btn {
+    min-height: 48px;
+    padding: var(--sp-3) var(--sp-3);
+  }
+
+  .q-stat-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .q-stat {
+    padding: var(--sp-4) 0;
+  }
+
+  .q-stat + .q-stat {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .q-stat:nth-child(n + 3) {
+    border-top: 1px solid var(--rule);
+  }
+
+  .q-stat:nth-child(even) {
+    padding-left: var(--sp-4);
+    border-left: 1px solid var(--rule);
+  }
+
+  .q-choice {
+    grid-auto-flow: row;
+  }
+
+  .q-choice-btn {
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .q-choice-btn:last-child {
+    border-bottom: 0;
+  }
+
+  .q-nav {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .q-nav-btns {
+    flex-direction: column;
+  }
+
+  .q-nav .btn,
+  .q-nav-btns .btn {
+    width: 100%;
+  }
+
+  /* 触屏目标：全局 .btn 在窄屏只有 33px 高（WCAG 2.2 要求 44），报价页是表单，
+     点错的代价比宣传页高，这里统一抬到 44。 */
+  .q-app .btn,
+  .q-app .q-key input,
+  .q-app .q-key .btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .q-reset {
+    width: 100%;
+  }
+
+  .q-price-v {
+    display: grid;
+    gap: var(--sp-1);
+  }
+
+  .q-price-dash {
+    display: none;
+  }
+
+  .q-vrow {
+    grid-template-columns: 20px minmax(0, 1fr);
+    row-gap: var(--sp-1);
+  }
+
+  .q-vrow-spec {
+    grid-column: 2;
+  }
+
+  .q-table th,
+  .q-table td {
+    padding-right: var(--sp-3);
+  }
+}
+
+/* ────────────────────────── 减少动效 ────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .q-app *,
+  .q-app *::before,
+  .q-app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   🆕 5 步改版（2026-11）：货物分类 / 自动推荐 / 提交确认
+   规则不变（CONTRACT §7）：直角、无阴影、无渐变、只用 tokens 变量、
+   悬停只在 (hover:hover) and (pointer:fine) 内且只变色。
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── 第 2 步：5 类货物分类（直角网格 + 左竖条选中）── */
+.q-classes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--rule);
+  border-left: 1px solid var(--rule);
+}
+
+.q-class {
+  position: relative;
+  border: 0;
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  background: transparent;
+  padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-5);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--ink);
+  transition: background var(--dur-hover) var(--ease-enter);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .q-class:hover { background: var(--paper-2); }
+}
+
+.q-class.is-on { background: var(--paper-2); }
+
+.q-class.is-on::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent);
+}
+
+.q-class-n {
+  display: block;
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+
+.q-class-d {
+  display: block;
+  margin-top: var(--sp-1);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+.q-class-more { grid-column: 1 / -1; }
+
+.q-classnote {
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 2px solid var(--accent);
+  background: var(--paper-2);
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+}
+
+/* ── 第 4 步：自动配车推荐卡 ── */
+.q-fit {
+  border: 1px solid var(--rule-strong);
+  padding: var(--sp-4) var(--sp-5);
+}
+
+.q-fit-tag {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.q-fit-name {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-h3);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.q-fit-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.q-chip {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  padding: 3px 8px;
+  border: 1px solid var(--rule);
+  color: var(--ink-2);
+}
+
+.q-chip.is-warn {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.q-fit-note {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+.q-fit-alt {
+  margin-top: var(--sp-3);
+  border: 0;
+  background: transparent;
+  padding: 0;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+  /* button 默认居中；和上下左对齐的内容不齐（第 4 步折叠按钮实测） */
+  text-align: left;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .q-fit-alt:hover { border-bottom-color: var(--ink); }
+}
+
+/* ── 装卸勾选（第 4 步）── */
+.q-checkrow {
+  display: flex;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+  margin: var(--sp-2) 0 var(--sp-5);
+}
+
+.q-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 44px;
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.q-check input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
+/* ── 第 5 步：提交前核对表 ── */
+.q-review {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--sp-4);
+}
+
+.q-review th {
+  width: 96px;
+  text-align: left;
+  font-weight: 400;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: var(--sp-3) 0;
+  vertical-align: top;
+  border-bottom: 1px solid var(--rule);
+}
+
+.q-review td {
+  padding: var(--sp-3) 0;
+  font-size: var(--fs-small);
+  border-bottom: 1px solid var(--rule);
+}
+
+.q-review tr:last-child th,
+.q-review tr:last-child td { border-bottom: 0; }
+
+.q-review-key {
+  border-bottom: 1px solid var(--ink);
+}
+
+@media (max-width: 720px) {
+  .q-classes { grid-template-columns: 1fr; }
+}
+
+/* ── 修 700–950px 视口下「输入框 + 单位」撑破网格列 ──
+   `.q-inline` 默认按内容宽度排，货值行还多一个币种单位（RMB/USD/VND），
+   窄屏两栏时内联宽度会超过列宽（744px 实测 354 / 296）。加 min-width:0
+   让 flex 子项可收缩，输入框自己承担省略，不把整列顶出去。 */
+.q-field,
+.q-inline,
+.q-inline > .q-input {
+  min-width: 0;
+}
+
+@media (max-width: 950px) {
+  .q-inline {
+    flex-wrap: wrap;
+  }
+
+  .q-inline > .q-input {
+    flex: 1 1 100%;
+  }
+}

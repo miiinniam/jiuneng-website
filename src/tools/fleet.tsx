@@ -3,32 +3,36 @@ import '../styles/tools.css';
 import FleetForm from './FleetForm';
 import AssistantLauncher from './AssistantLauncher';
 import { ToolHeader } from './parts';
+import { getTools } from '../content';
+import { useLang } from '../shell/LangProvider';
 
 function Fleet() {
+  const { lang } = useLang();
+  const t = getTools(lang);
   return (
     <>
       <ToolHeader
-        index="平台 03 / 车辆匹配"
-        title="车辆匹配与超限核查"
-        lead="按单件长宽与重量给出建议车型、所需车数与拆分建议，并判定是否触发超限。超限货物不在线上直接出方案。"
-        aside={<p className="t-hero-note">判定依据为单件最大尺寸；实际车辆可用性以项目经理确认为准。</p>}
+        index={t.fleet.index}
+        title={t.fleet.title}
+        lead={t.fleet.lead}
+        aside={<p className="t-hero-note">{t.fleet.aside}</p>}
       />
 
       <div className="t-section">
         <FleetForm />
       </div>
 
-      <nav className="t-cross" aria-label="其他工具">
-        <p className="micro">继续</p>
+      <nav className="t-cross" aria-label={t.nav.crossAria}>
+        <p className="micro">{t.nav.continue}</p>
         <ul>
           <li>
-            <a href="/platform/routing">01 线路与运价测算 →</a>
+            <a href="/platform/routing">{t.nav.toRouting}</a>
           </li>
           <li>
-            <a href="/platform/customs">02 报关与税费 →</a>
+            <a href="/platform/customs">{t.nav.toCustoms}</a>
           </li>
           <li>
-            <a href="/platform/assistant">04 测算助手 →</a>
+            <a href="/platform/assistant">{t.nav.toAssistant}</a>
           </li>
         </ul>
       </nav>

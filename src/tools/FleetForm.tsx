@@ -8,6 +8,8 @@
 import { useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { errorText, fmtDecimal, fmtInt, postFleetMatch, reasonText, type FleetItem, type FleetResult } from './api';
+import { getTools } from '../content';
+import { useLang } from '../shell/LangProvider';
 import { Disclaim, ErrorLine } from './parts';
 
 type Row = {
@@ -49,6 +51,8 @@ function num(raw: string): number {
 }
 
 export default function FleetForm() {
+  const { lang } = useLang();
+  const t = getTools(lang);
   const [rows, setRows] = useState<Row[]>([newRow()]);
   const [weight, setWeight] = useState('');
   const [volume, setVolume] = useState('');
@@ -74,12 +78,12 @@ export default function FleetForm() {
       const row = rows[i];
       const kg = num(row.weight);
       if (kg <= 0) {
-        setError(`第 ${i + 1} 件：单件重量需为大于 0 的数值（kg）。`);
+        setError(t.fleet.errItemWeight.replace('{n}', String(i + 1)));
         return;
       }
       const count = Math.max(1, Math.round(num(row.count) || 1));
       if (count > 50) {
-        setError(`第 ${i + 1} 件：件数需为 1–50 的整数。`);
+        setError(t.fleet.errItemQty.replace('{n}', String(i + 1)));
         return;
       }
       const height = num(row.height);
@@ -96,7 +100,7 @@ export default function FleetForm() {
 
     const totalWeight = num(weight) > 0 ? num(weight) : rowWeight;
     if (totalWeight <= 0) {
-      setError('请填写货物总重（kg），或在明细里填写单件重量。');
+      setError(t.fleet.errWeight);
       return;
     }
 
@@ -126,14 +130,14 @@ export default function FleetForm() {
     <div className="t-grid">
       <form className="t-form" onSubmit={submit} noValidate>
         <div className="t-form-head">
-          <p className="micro">输入</p>
-          <h2 className="t-h2">货物明细</h2>
+          <p className="micro">{t.fleet.inputKicker}</p>
+          <h2 className="t-h2">{t.fleet.inputTitle}</h2>
         </div>
 
         <div className="t-fields t-fields-2">
           <label className="t-field">
             <span className="t-label">
-              货物总重（kg）<span className="t-opt">留空按明细汇总</span>
+              {t.fleet.totalWeight}<span className="t-opt">{t.fleet.totalWeightOpt}</span>
             </span>
             <input
               className="t-input"
@@ -141,7 +145,7 @@ export default function FleetForm() {
               inputMode="numeric"
               min={0}
               step={100}
-              placeholder={rowWeight > 0 ? String(Math.round(rowWeight)) : '例如 18000'}
+              placeholder={rowWeight > 0 ? String(Math.round(rowWeight)) : t.fleet.totalWeightPh}
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
             />
@@ -149,7 +153,7 @@ export default function FleetForm() {
 
           <label className="t-field">
             <span className="t-label">
-              总体积（m³）<span className="t-opt">选填</span>
+              {t.fleet.volume}<span className="t-opt">{t.customs.opt}</span>
             </span>
             <input
               className="t-input"
@@ -165,26 +169,26 @@ export default function FleetForm() {
 
         <div className="t-rows">
           <div className="t-rows-head">
-            <p className="t-label">逐件明细</p>
-            <p className="t-hint">超限按单件最大尺寸判定；长宽留空时只按重量配车，不出超限结论。</p>
+            <p className="t-label">{t.fleet.rowsLabel}</p>
+            <p className="t-hint">{t.fleet.rowsHint}</p>
           </div>
 
           {rows.map((row, index) => (
             <fieldset className="t-row" key={row.key} data-testid="fleet-row">
-              <legend className="t-row-legend">第 {index + 1} 件</legend>
+              <legend className="t-row-legend">{t.fleet.rowLegend.replace('{n}', String(index + 1))}</legend>
               <div className="t-row-grid">
                 <label className="t-field t-span-2">
-                  <span className="t-label">名称</span>
+                  <span className="t-label">{t.fleet.name}</span>
                   <input
                     className="t-input"
                     type="text"
-                    placeholder="如 风机叶片 / 变压器"
+                    placeholder={t.fleet.namePh}
                     value={row.name}
                     onChange={(e) => patch(row.key, { name: e.target.value })}
                   />
                 </label>
                 <label className="t-field">
-                  <span className="t-label">长（m）</span>
+                  <span className="t-label">{t.fleet.length}</span>
                   <input
                     className="t-input"
                     type="number"
@@ -196,7 +200,7 @@ export default function FleetForm() {
                   />
                 </label>
                 <label className="t-field">
-                  <span className="t-label">宽（m）</span>
+                  <span className="t-label">{t.fleet.width}</span>
                   <input
                     className="t-input"
                     type="number"
@@ -209,7 +213,7 @@ export default function FleetForm() {
                 </label>
                 <label className="t-field">
                   <span className="t-label">
-                    高（m）<span className="t-opt">选填</span>
+                    {t.fleet.height}<span className="t-opt">{t.customs.opt}</span>
                   </span>
                   <input
                     className="t-input"
@@ -222,7 +226,7 @@ export default function FleetForm() {
                   />
                 </label>
                 <label className="t-field">
-                  <span className="t-label">单件重量（kg）</span>
+                  <span className="t-label">{t.fleet.rowWeight}</span>
                   <input
                     className="t-input"
                     type="number"
@@ -234,7 +238,7 @@ export default function FleetForm() {
                   />
                 </label>
                 <label className="t-field">
-                  <span className="t-label">件数</span>
+                  <span className="t-label">{t.fleet.qty}</span>
                   <input
                     className="t-input"
                     type="number"
@@ -251,7 +255,7 @@ export default function FleetForm() {
                     checked={row.stackable}
                     onChange={(e) => patch(row.key, { stackable: e.target.checked })}
                   />
-                  <span>可叠放</span>
+                  <span>{t.fleet.stackable}</span>
                 </label>
               </div>
               {rows.length > 1 ? (
@@ -260,7 +264,7 @@ export default function FleetForm() {
                   className="t-btn-text"
                   onClick={() => setRows((prev) => prev.filter((item) => item.key !== row.key))}
                 >
-                  删除本行
+                  {t.fleet.removeRow}
                 </button>
               ) : null}
             </fieldset>
@@ -272,7 +276,7 @@ export default function FleetForm() {
             data-testid="fleet-add"
             onClick={() => setRows((prev) => [...prev, newRow()])}
           >
-            添加一行
+            {t.fleet.addRow}
           </button>
         </div>
 
@@ -280,21 +284,21 @@ export default function FleetForm() {
 
         <div className="t-actions">
           <button type="submit" className="t-btn" data-testid="fleet-submit" disabled={busy}>
-            {busy ? '匹配中…' : '匹配车型'}
+            {busy ? t.fleet.submitBusy : t.fleet.submit}
           </button>
-          <span className="t-busy">按尺寸与重量给出建议，不代表已确认车辆可用</span>
+          <span className="t-busy">{t.fleet.submitNote}</span>
         </div>
       </form>
 
       <section className="t-out" data-testid="fleet-result" aria-live="polite">
         <div className="t-out-head">
-          <p className="micro">结果</p>
-          <h2 className="t-h2">建议车型 · 需车数 · 超限</h2>
+          <p className="micro">{t.fleet.resultKicker}</p>
+          <h2 className="t-h2">{t.fleet.resultTitle}</h2>
         </div>
 
-        {busy ? <p className="t-hint">正在匹配车型…</p> : null}
+        {busy ? <p className="t-hint">{t.fleet.fetching}</p> : null}
 
-        {!busy && !result ? <p className="t-hint">填写货物明细后点「匹配车型」，结果会显示在这里。</p> : null}
+        {!busy && !result ? <p className="t-hint">{t.fleet.empty}</p> : null}
 
         {!busy && failResult ? (
           <p className="t-err" role="alert">
@@ -306,21 +310,21 @@ export default function FleetForm() {
           <>
             <dl className="t-stats">
               <div className="t-stat">
-                <dt>合计车数</dt>
+                <dt>{t.fleet.rowTotal}</dt>
                 <dd>
-                  <span className="t-num">{fmtInt(okResult.total_trucks)}</span> 台
+                  <span className="t-num">{fmtInt(okResult.total_trucks)}</span> {t.fleet.unitVehicles}
                 </dd>
               </div>
             </dl>
 
             <div className="t-groups">
-              {groups.length === 0 ? <p className="t-hint">未得到可用车型组合，请联系项目经理。</p> : null}
+              {groups.length === 0 ? <p className="t-hint">{t.fleet.noCombo}</p> : null}
               {groups.map((group) => (
                 <article className="t-group" key={`${group.model}-${group.category}`}>
                   <header className="t-group-head">
-                    <p className="t-group-name">{MODEL_LABEL[group.model] ?? group.category}</p>
+                    <p className="t-group-name">{(t.fleet.vehicleLabels as Record<string, string>)[group.model] ?? MODEL_LABEL[group.model] ?? group.category}</p>
                     <p className="t-num">
-                      {fmtDecimal(group.vehicle_count, 0)} 台
+                      {fmtDecimal(group.vehicle_count, 0)} {t.fleet.unitVehicles}
                     </p>
                   </header>
                   <p className="t-group-meta">
@@ -342,17 +346,17 @@ export default function FleetForm() {
               className={okResult.oversize?.blocked ? 't-warn t-warn-strong' : 't-ok-line'}
               data-testid="fleet-oversize"
             >
-              <p className="t-label">超限判定</p>
+              <p className="t-label">{t.fleet.oversizeLabel}</p>
               <p>
                 {okResult.oversize?.blocked
-                  ? '判定为超限货物：需走专项运输方案与超限许可，本条不在线上直接给方案。'
-                  : '未触发超限阈值，可按常规车辆组织运输。'}
+                  ? t.fleet.oversizeYes
+                  : t.fleet.oversizeNo}
               </p>
               {okResult.oversize?.basis ? <p className="t-hint">{okResult.oversize.basis}</p> : null}
             </div>
 
             <p className="t-out-foot">
-              车型为初步匹配结果，实际车辆可用性以项目经理确认为准；超限线路需另办许可。
+              {t.fleet.note}
             </p>
           </>
         ) : null}

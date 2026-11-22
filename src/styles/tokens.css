@@ -46,6 +46,15 @@
   --sp-9: 96px;
   --sp-10: 128px;
 
+  /* 动效：页面只用令牌，不写死曲线与毫秒
+     enter  = 入场/按压（陡起缓收）
+     move   = 位移（面板、锚点滚动） */
+  --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-move: cubic-bezier(0.25, 1, 0.5, 1);
+  --dur-press: 90ms;
+  --dur-hover: 200ms;
+  --dur-underline: 240ms;
+
   /* 栅格 */
   --maxw: 1320px;
   --margin: clamp(20px, 5vw, 72px);

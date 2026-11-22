@@ -22,6 +22,8 @@ import {
   type VehicleOption,
 } from './api';
 import { Disclaim, ErrorLine, Hint } from './parts';
+import { getTools } from '../content';
+import { useLang } from '../shell/LangProvider';
 
 type Status = 'idle' | 'loading' | 'busy' | 'failed';
 
@@ -34,6 +36,14 @@ function firstId(list: PlaceOption[], fallback: string): string {
 }
 
 export default function RoutingForm() {
+  const { lang } = useLang();
+  const t = getTools(lang);
+  /** 服务端下发的中文城市名 → 用本地清单里的当前语言名（清单里没有就回落到服务端值） */
+  const placeName = (o: { id: string; label: string } | null): string => {
+    if (!o) return '';
+    const hit = places.find((pl) => pl.id === o.id) as unknown as Record<string, string> | undefined;
+    return hit?.[lang] ?? o.label;
+  };
   const [places, setPlaces] = useState<PlaceOption[]>([]);
   const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
   const [status, setStatus] = useState<Status>('loading');
@@ -88,18 +98,18 @@ export default function RoutingForm() {
   }, [vehicles, vehicleId]);
 
   const validate = (): string => {
-    if (!origin) return '请选择起点。';
-    if (!destination) return '请选择终点。';
-    if (origin === destination) return '起点与终点不能相同。';
+    if (!origin) return t.routing.errOrigin;
+    if (!destination) return t.routing.errDest;
+    if (origin === destination) return t.routing.errSame;
     const kg = Number(weight);
-    if (!Number.isFinite(kg) || kg <= 0) return '请填写大于 0 的货重（单位 kg）。';
+    if (!Number.isFinite(kg) || kg <= 0) return t.routing.errWeight;
     if (mode === 'consolidated') {
       const m3 = Number(volume);
       if (!Number.isFinite(m3) || m3 <= 0) {
-        return '拼车测算需要填写货物总体积（m³）；若无法给出体积，请改选整车或走正式询价。';
+        return t.routing.errVolume;
       }
     }
-    if (mode === 'full_truck' && !vehicleId) return '整车测算请选择一种车型。';
+    if (mode === 'full_truck' && !vehicleId) return t.routing.errVehicle;
     return '';
   };
 
@@ -145,23 +155,23 @@ export default function RoutingForm() {
     <div className="t-grid">
       <form className="t-form" onSubmit={submit} noValidate>
         <div className="t-form-head">
-          <p className="micro">输入</p>
-          <h2 className="t-h2">货物与线路</h2>
+          <p className="micro">{t.routing.inputKicker}</p>
+          <h2 className="t-h2">{t.routing.inputTitle}</h2>
         </div>
 
-        {status === 'loading' ? <p className="t-hint">正在载入可测算城市清单…</p> : null}
+        {status === 'loading' ? <p className="t-hint">{t.routing.loading}</p> : null}
         {status === 'failed' ? (
           <div className="t-err-box">
-            <p className="t-err" role="alert">{loadError || '城市清单加载失败，请重试。'}</p>
+            <p className="t-err" role="alert">{loadError || t.routing.loadFail}</p>
             <button type="button" className="t-btn-ghost" onClick={() => void loadPlaces()}>
-              重试
+              {t.routing.retry}
             </button>
           </div>
         ) : null}
 
         <div className="t-fields">
           <label className="t-field">
-            <span className="t-label">起点（中国）</span>
+            <span className="t-label">{t.routing.origin}</span>
             <select
               className="t-input"
               data-testid="route-origin"
@@ -172,14 +182,14 @@ export default function RoutingForm() {
               {origins.length === 0 ? <option value="">—</option> : null}
               {origins.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.zh}
+                  {p[lang]}
                 </option>
               ))}
             </select>
           </label>
 
           <label className="t-field">
-            <span className="t-label">终点（越南）</span>
+            <span className="t-label">{t.routing.dest}</span>
             <select
               className="t-input"
               data-testid="route-destination"
@@ -190,14 +200,14 @@ export default function RoutingForm() {
               {destinations.length === 0 ? <option value="">—</option> : null}
               {destinations.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.zh}
+                  {p[lang]}
                 </option>
               ))}
             </select>
           </label>
 
           <label className="t-field">
-            <span className="t-label">货重（kg）</span>
+            <span className="t-label">{t.routing.weight}</span>
             <input
               className="t-input"
               data-testid="route-weight"
@@ -212,7 +222,7 @@ export default function RoutingForm() {
 
           <label className="t-field">
             <span className="t-label">
-              体积（m³）<span className="t-opt">拼车必填</span>
+              {t.routing.volume}<span className="t-opt">{t.routing.volumeOpt}</span>
             </span>
             <input
               className="t-input"
@@ -221,28 +231,28 @@ export default function RoutingForm() {
               inputMode="decimal"
               min={0}
               step={0.1}
-              placeholder={mode === 'consolidated' ? '例如 32' : '可留空'}
+              placeholder={mode === 'consolidated' ? t.routing.volumePh : t.routing.volumePhEmpty}
               value={volume}
               onChange={(e) => setVolume(e.target.value)}
             />
           </label>
 
           <label className="t-field">
-            <span className="t-label">运输方式</span>
+            <span className="t-label">{t.routing.mode}</span>
             <select
               className="t-input"
               data-testid="route-mode"
               value={mode}
               onChange={(e) => setMode(e.target.value as QuoteMode)}
             >
-              <option value="consolidated">拼车（零担）</option>
-              <option value="full_truck">整车（专车）</option>
+              <option value="consolidated">{t.routing.modeConsolidated}</option>
+              <option value="full_truck">{t.routing.modeFull}</option>
             </select>
           </label>
 
           {mode === 'full_truck' ? (
             <label className="t-field">
-              <span className="t-label">车型</span>
+              <span className="t-label">{t.routing.vehicle}</span>
               <select
                 className="t-input"
                 data-testid="route-vehicle"
@@ -252,7 +262,7 @@ export default function RoutingForm() {
                 {vehicles.length === 0 ? <option value="">—</option> : null}
                 {vehicles.map((v) => (
                   <option key={v.id} value={v.id}>
-                    {v.zh}（限载 {v.max_load_ton} 吨）
+                    {v[lang]}{t.routing.vehicleCap.replace('{n}', String(v.max_load_ton))}
                   </option>
                 ))}
               </select>
@@ -261,29 +271,29 @@ export default function RoutingForm() {
         </div>
 
         <Hint>
-          起点与终点只能从清单中选择；清单外地址请走<a href="/contact">在线询价</a>，由项目经理核算。
+          {t.routing.citiesNotePre}<a href="/contact">{t.nav.contactLink}</a>{t.routing.citiesNotePost}
         </Hint>
 
         <ErrorLine text={formError} testId="route-error" />
 
         <div className="t-actions">
           <button type="submit" className="t-btn" data-testid="route-submit" disabled={busy || status !== 'idle'}>
-            {busy ? '测算中…' : '测算'}
+            {busy ? t.routing.submitBusy : t.routing.submit}
           </button>
-          {busy ? <span className="t-busy">首次唤醒测算引擎可能需要 30–60 秒</span> : null}
+          {busy ? <span className="t-busy">{t.routing.busyNote}</span> : null}
         </div>
       </form>
 
       <section className="t-out" data-testid="route-result" aria-live="polite">
         <div className="t-out-head">
-          <p className="micro">结果</p>
-          <h2 className="t-h2">里程 · 车数 · 参考区间</h2>
+          <p className="micro">{t.routing.resultKicker}</p>
+          <h2 className="t-h2">{t.routing.resultTitle}</h2>
         </div>
 
-        {busy ? <p className="t-hint">正在向测算引擎取数…</p> : null}
+        {busy ? <p className="t-hint">{t.routing.fetching}</p> : null}
 
         {!busy && !ok && !fail ? (
-          <p className="t-hint">填写左侧参数后点「测算」，结果会显示在这里。</p>
+          <p className="t-hint">{t.routing.empty}</p>
         ) : null}
 
         {!busy && fail ? <p className="t-err" role="alert">{failText}</p> : null}
@@ -292,43 +302,43 @@ export default function RoutingForm() {
           <>
             <dl className="t-stats">
               <div className="t-stat">
-                <dt>线路</dt>
+                <dt>{t.routing.rowRoute}</dt>
                 <dd className="t-num-line">
-                  {ok.origin.label} → {ok.destination.label}
+                  {placeName(ok.origin)} → {placeName(ok.destination)}
                 </dd>
               </div>
               {ok.border ? (
                 <div className="t-stat">
-                  <dt>口岸</dt>
-                  <dd>{ok.border.label}</dd>
+                  <dt>{t.routing.rowGate}</dt>
+                  <dd>{placeName(ok.border)}</dd>
                 </div>
               ) : null}
               <div className="t-stat">
-                <dt>里程</dt>
+                <dt>{t.routing.rowDistance}</dt>
                 <dd>
                   <span className="t-num">{fmtInt(ok.distance_km)}</span> km
                 </dd>
               </div>
               <div className="t-stat">
-                <dt>预计行驶</dt>
+                <dt>{t.routing.rowDriving}</dt>
                 <dd>
-                  <span className="t-num">{fmtDecimal(ok.driving_h)}</span> 小时
+                  <span className="t-num">{fmtDecimal(ok.driving_h)}</span> {t.routing.unitHours}
                 </dd>
               </div>
               <div className="t-stat">
-                <dt>所需车数</dt>
+                <dt>{t.routing.rowVehicles}</dt>
                 <dd>
-                  <span className="t-num">{fmtInt(ok.vehicle_count)}</span> 台
+                  <span className="t-num">{fmtInt(ok.vehicle_count)}</span> {t.routing.unitVehicles}
                 </dd>
               </div>
               <div className="t-stat">
-                <dt>车型</dt>
-                <dd>{ok.vehicle_label ?? (ok.mode === 'consolidated' ? '拼车（按体积配载）' : '—')}</dd>
+                <dt>{t.routing.rowVehicle}</dt>
+                <dd>{(vehicles.find((v) => v.id === ok.vehicle_id) as unknown as Record<string, string> | undefined)?.[lang] ?? ok.vehicle_label ?? (ok.mode === 'consolidated' ? t.routing.byVolume : '—')}</dd>
               </div>
             </dl>
 
             <div className="t-price">
-              <p className="t-price-label">参考运费区间（VND）</p>
+              <p className="t-price-label">{t.routing.priceLabel}</p>
               <p className="t-price-value">
                 {ok.price_min_vnd !== null && ok.price_max_vnd !== null ? (
                   <>
@@ -338,21 +348,21 @@ export default function RoutingForm() {
                     <span className="t-unit"> VND</span>
                   </>
                 ) : (
-                  <span>暂无区间，请走正式询价</span>
+                  <span>{t.routing.noRange}</span>
                 )}
               </p>
               <p className="t-price-note">
-                区间为测算售价 ±10% 取整，随燃油、口岸排队与季节浮动。
+                {t.routing.rangeNote}
               </p>
             </div>
 
             {ok.profile_honored === false ? (
-              <p className="t-warn">本次结果未按所选时效参数计算，时长与车数按常规安排估算。</p>
+              <p className="t-warn">{t.routing.untimed}</p>
             ) : null}
 
             {suggestions.length > 0 ? (
               <div className="t-notes">
-                <p className="t-label">补充说明</p>
+                <p className="t-label">{t.routing.extra}</p>
                 <ul className="t-list">
                   {suggestions.map((line) => (
                     <li key={line}>{line}</li>
@@ -362,7 +372,7 @@ export default function RoutingForm() {
             ) : null}
 
             <p className="t-out-foot">
-              要拿正式价格与船期/车期安排，把这条条件带到<a href="/contact">在线询价</a>，项目经理按实际核算。
+              {t.routing.ctaPre}<a href="/contact">{t.nav.contactLink}</a>{t.routing.ctaPost}
             </p>
           </>
         ) : null}

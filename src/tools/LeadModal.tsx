@@ -17,6 +17,8 @@ import {
   type CustomsParams,
   type CustomsLine,
 } from './api';
+import { getTools } from '../content';
+import { useLang } from '../shell/LangProvider';
 import { Disclaim, ErrorLine } from './parts';
 
 type Props = {
@@ -36,14 +38,16 @@ function Side({
   total: number;
   unit: 'RMB' | 'VND';
 }) {
+  const { lang } = useLang();
+  const t = getTools(lang);
   return (
     <div className="t-side">
       <p className="t-label">{title}</p>
       <ul className="t-lines">
-        {lines.length === 0 ? <li className="t-line-empty">无分项</li> : null}
+        {lines.length === 0 ? <li className="t-line-empty">{t.lead.emptyLine}</li> : null}
         {lines.map((line) => (
           <li key={`${line.label_zh}-${line.amount}`} className="t-line">
-            <span>{line.label_zh}</span>
+            <span>{t.customsLines[line.label_zh] ?? line.label_zh}</span>
             <span className="t-num">
               {fmtInt(line.amount)} {line.unit}
             </span>
@@ -51,17 +55,19 @@ function Side({
         ))}
       </ul>
       <p className="t-line-total">
-        <span>小计</span>
+        <span>{t.lead.subtotal}</span>
         <span className="t-num">
           {fmtInt(total)} {unit}
         </span>
       </p>
-      <p className="t-side-note">口径注：含服务口径的对外金额，不是成本，也不含临时仓储与查验超额。</p>
+      <p className="t-side-note">{t.lead.sideNote}</p>
     </div>
   );
 }
 
 export default function LeadModal({ open, params, onClose }: Props) {
+  const { lang } = useLang();
+  const t = getTools(lang);
   const [company, setCompany] = useState('');
   const [contact, setContact] = useState('');
   const [reach, setReach] = useState('');
@@ -100,7 +106,7 @@ export default function LeadModal({ open, params, onClose }: Props) {
     event.preventDefault();
     if (busy) return;
     if (!company.trim() || !contact.trim() || !reach.trim()) {
-      setError('请把公司、联系人、联系方式三项填写完整。');
+      setError(t.lead.errRequired);
       return;
     }
     setError('');
@@ -133,12 +139,12 @@ export default function LeadModal({ open, params, onClose }: Props) {
       >
         <header className="t-modal-head">
           <div>
-            <p className="micro">分项明细</p>
+            <p className="micro">{t.lead.kicker}</p>
             <h2 className="t-h2" id="lead-modal-title">
-              {detail ? '中国端 / 越南端分项' : '留下公司信息，查看分项'}
+              {detail ? t.lead.titleDetail : t.lead.titleGate}
             </h2>
           </div>
-          <button type="button" className="t-close" onClick={onClose} aria-label="关闭">
+          <button type="button" className="t-close" onClick={onClose} aria-label={t.lead.closeAria}>
             ✕
           </button>
         </header>
@@ -147,13 +153,13 @@ export default function LeadModal({ open, params, onClose }: Props) {
           <div className="t-modal-body" data-testid="customs-detail">
             <div className="t-sides">
               <Side
-                title="中国端（出口报关）"
+                title={t.lead.chinaTitle}
                 lines={Array.isArray(detail.china_side) ? detail.china_side : []}
                 total={detail.china_total_rmb}
                 unit="RMB"
               />
               <Side
-                title="越南端（进口清关）"
+                title={t.lead.vietnamTitle}
                 lines={Array.isArray(detail.vietnam_side) ? detail.vietnam_side : []}
                 total={detail.vietnam_total_vnd}
                 unit="VND"
@@ -171,20 +177,20 @@ export default function LeadModal({ open, params, onClose }: Props) {
             <Disclaim />
 
             <div className="t-modal-foot">
-              <p className="t-hint">需要按本条参数出正式报价，请联系项目经理复核。</p>
+              <p className="t-hint">{t.lead.needFormal}</p>
               <button type="button" className="t-btn-ghost" onClick={onClose}>
-                关闭
+                {t.lead.close}
               </button>
             </div>
           </div>
         ) : (
           <form className="t-modal-body" onSubmit={submit} noValidate>
             <p className="t-hint">
-              三项信息仅用于本次明细与后续对接，不建账号、不设密码；明细凭证 30 分钟后失效。
+              {t.lead.privacy}
             </p>
 
             <label className="t-field">
-              <span className="t-label">公司名称</span>
+              <span className="t-label">{t.lead.company}</span>
               <input
                 ref={firstRef}
                 className="t-input"
@@ -197,7 +203,7 @@ export default function LeadModal({ open, params, onClose }: Props) {
             </label>
 
             <label className="t-field">
-              <span className="t-label">联系人</span>
+              <span className="t-label">{t.lead.contact}</span>
               <input
                 className="t-input"
                 data-testid="lead-contact"
@@ -209,7 +215,7 @@ export default function LeadModal({ open, params, onClose }: Props) {
             </label>
 
             <label className="t-field">
-              <span className="t-label">联系方式（手机 / 微信 / 邮箱）</span>
+              <span className="t-label">{t.lead.contactWay}</span>
               <input
                 className="t-input"
                 data-testid="lead-reach"
@@ -224,10 +230,10 @@ export default function LeadModal({ open, params, onClose }: Props) {
 
             <div className="t-actions">
               <button type="submit" className="t-btn" data-testid="lead-submit" disabled={busy}>
-                {busy ? '提交中…' : '查看分项明细'}
+                {busy ? t.lead.submitBusy : t.lead.submit}
               </button>
               <button type="button" className="t-btn-ghost" onClick={onClose}>
-                取消
+                {t.lead.cancel}
               </button>
             </div>
 
