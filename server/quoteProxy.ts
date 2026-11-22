@@ -941,7 +941,11 @@ export function createQuoteRouter(): Router {
     // 线上引擎调公共 Nominatim 恒返空（Render 的数据中心 IP 被 OSM 限制，实测中英越三种写法全空），
     // 而本地同一条链正常 → 引擎空就交给官网侧兜底链（中文别名 → Photon）。
     // 表单地址建议与 AI 的 set_route 共用这一处，别只在其中一条上加兜底。
-    if (!results.length) results = await geocodeFallback(q, 6);
+    if (!results.length) {
+      results = await geocodeFallback(q, 6);
+      // 线上诊断用：Render 日志里能直接看出「引擎空 → 兜底命中几条」
+      console.info(`[geocode] 引擎空，兜底 "${q}" → ${results.length} 条`);
+    }
     res.json({ results });
   });
 
