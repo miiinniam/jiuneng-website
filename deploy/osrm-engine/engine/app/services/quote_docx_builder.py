@@ -19,7 +19,10 @@ from docx.shared import Pt
 
 # ── 金额工具：已抽到 quote_format.py（v010 起与 quote_template 共用）──────
 # 此处 re-export，既有 `from app.services.quote_docx_builder import _fmt_vnd` 调用与测试不受影响。
-from app.services.quote_format import _fmt_vnd, _vnd_uppercase  # noqa: E402,F401
+from app.services.quote_format import (  # noqa: E402,F401
+    _fmt_vnd, _vnd_uppercase, border_fee_scope, border_fees_included_of,
+    estimate_basis_of,   # 🆕 v024 T3：普货口径句（唯一定义处在 quote_format）
+)
 
 
 def _set_font(run, size=10.5, bold=False, cn="宋体"):
@@ -223,20 +226,23 @@ _BORDER_META = {
 
 
 def _add_border_fees(doc, payload):
-    """（二）进出口费用：中国段/越南段明细（自动或逐项覆盖后的值）。"""
+    """（二）进出口费用：中国段/越南段明细（自动或逐项覆盖后的值）。
+
+    🆕 v023（② 两端开关）：只印**未关的一端** —— 分支走唯一真源 `border_fee_scope(payload)`：
+      `both` ⇒ 中国段 + 越南段；`export_only` ⇒ 只中国段；`import_only` ⇒ 只越南段；`none` ⇒ 整节不出现。
+    ⚠️ 被关一端的分支在响应体里是 `None` ⇒ 本函数**必须 None-safe**：不许对 `side.items` 裸取属性
+      （`None.items` ⇒ AttributeError，② 一上线导出就 500，前端看着再对也没用）。
+    """
+    scope = border_fee_scope(payload)
+    if scope == "none":
+        return
     bf = getattr(payload, "border_fees", None)
-    if not bf:
+    if bf is None:
         return
     rate = bf.exchange_rate or 0
 
-    china, viet = bf.china_side, bf.vietnam_side
-    if not getattr(china, "items", None) and not getattr(viet, "items", None):
-        return
-    manual_tag = "（已手动调整）" if getattr(bf, "manual", False) else ""
-    doc.add_paragraph(f"（二）进出口费用{manual_tag}")
-
     def _side_table(side, title):
-        rows = [(_BORDER_META.get(k, k), v) for k, v in (side.items or {}).items() if v]
+        rows = [(_BORDER_META.get(k, k), v) for k, v in (getattr(side, "items", None) or {}).items() if v]
         if not rows:
             return
         doc.add_paragraph(title)
@@ -261,8 +267,17 @@ def _add_border_fees(doc, payload):
         last.cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
         last.cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
-    _side_table(china, "中国段")
-    _side_table(viet, "越南段")
+    # 只印未关的一端（`scope` 是唯一分支源，不在这里各写一遍两个布尔）
+    emit_cn = scope in ("both", "export_only") and bool(getattr(bf.china_side, "items", None))
+    emit_vn = scope in ("both", "import_only") and bool(getattr(bf.vietnam_side, "items", None))
+    if not (emit_cn or emit_vn):
+        return
+    manual_tag = "（已手动调整）" if getattr(bf, "manual", False) else ""
+    doc.add_paragraph(f"（二）进出口费用{manual_tag}")
+    if emit_cn:
+        _side_table(bf.china_side, "中国段")
+    if emit_vn:
+        _side_table(bf.vietnam_side, "越南段")
     pp = doc.add_paragraph()
     _set_font(pp.add_run(
         f"进出口费小计：{_fmt_vnd(bf.total_vnd or 0)} VND（{_fmt_vnd(bf.total_rmb or 0)} RMB，"
@@ -270,33 +285,57 @@ def _add_border_fees(doc, payload):
 
 
 def _add_fee_total(doc, payload):
-    """三、费用总计：运输费 + 进出口费 = 客户总报价（VND）。"""
+    """三、费用总计：运输费 + 进出口费 = 客户总报价（VND）。
+
+    🆕 v022 T4：关掉「进出口费用」开关（`payload.border_fees_included=False`）时
+    不出「进出口费用」行，客户总报价 = 运输费用。
+    """
     transport = _transport_subtotal(payload)
     bf = getattr(payload, "border_fees", None)
-    border_vnd = (bf.total_vnd or 0) if bf else 0
+    scope = border_fee_scope(payload)
+    border_vnd = float(getattr(bf, "total_vnd", 0) or 0) if scope != "none" else 0
     grand = round(transport + border_vnd)
     doc.add_paragraph("三、费用总计")
     tab = doc.add_table(rows=3, cols=2)
     tab.style = "Table Grid"
     rows = [
         ("运输费用", f"{_fmt_vnd(transport)} VND"),
-        ("进出口费用", f"{_fmt_vnd(border_vnd)} VND"),
-        ("客户总报价", f"{_fmt_vnd(grand)} VND"),
     ]
+    if scope != "none":
+        rows.append(("进出口费用", f"{_fmt_vnd(border_vnd)} VND"))
+    rows.append(("客户总报价", f"{_fmt_vnd(grand)} VND"))
     for i, (k, v) in enumerate(rows):
         tab.rows[i].cells[0].text = k
         tab.rows[i].cells[1].text = v
         _set_font(tab.rows[i].cells[0].paragraphs[0].runs[0], 10.5, bold=True)
-    tab.rows[2].cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    _set_font(tab.rows[2].cells[1].paragraphs[0].runs[0], 10.5, bold=True)
+    last = len(rows) - 1
+    tab.rows[last].cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    _set_font(tab.rows[last].cells[1].paragraphs[0].runs[0], 10.5, bold=True)
     pp = doc.add_paragraph()
     _set_font(pp.add_run(f"大写金额（VND）：{_vnd_uppercase(grand)}"), 10.5, bold=True)
 
 
 def _add_notes(doc, payload):
     doc.add_paragraph("四、报价说明")
+    # 🆕 v022 T4：开关关闭时第 1 条同步改口（不得再声称「含进出口服务费」）。
+    # 🆕 v023（② 两端开关）：第 1 条扩到 **4 态** —— 「仅一端」必须**具名**写清含哪端、未含哪端，
+    #   否则「本报价不含进出口费用」这种笼统说法与实物单据口径不符（用户 2026-10-01 拍板：按实物具名列不含项）。
+    scope = border_fee_scope(payload)
+    days = payload.validity_days
+    if scope == "none":
+        first = f"1. 本报价仅含运输服务费（不含进出口口岸费），有效期 {days} 天。"
+    elif scope == "export_only":
+        # 具名不含项：用「越南境内 + 具体费用项」而不是复述另一端段名 —— 旧版式的行级判据是
+        # 全文子串（"越南段" 出现与否），本行若复述段名会与「越南段行未印」自相矛盾（判据见门禁 R3）。
+        first = (f"1. 本报价含运输服务费及中国段进出口口岸费（未含越南境内口岸费、报关及货场等费用），"
+                 f"有效期 {days} 天。")
+    elif scope == "import_only":
+        first = (f"1. 本报价含运输服务费及越南段进出口口岸费（未含中国境内报关、货场等费用），"
+                 f"有效期 {days} 天。")
+    else:
+        first = f"1. 本报价含运输服务费及进出口服务费，有效期 {days} 天。"
     notes = [
-        f"1. 本报价含运输服务费及进出口服务费，有效期 {payload.validity_days} 天。",
+        first,
         "2. 本报价不含越南进口关税及增值税、保险等费用。",
         "3. 付款方式：【待确认】。",
         "4. 其余批次/货物另行报价。",
@@ -305,6 +344,21 @@ def _add_notes(doc, payload):
     note = (getattr(payload, "oversize_note", "") or "").strip()
     if note:
         notes.append(f"{len(notes) + 1}. {note}")   # 🆕 大件/超限专线价说明
+    # 🆕 v024 T3：普货口径（`estimate_mode="general_cargo"`，即「普货模式」）必须在**单据上自证**：
+    #   该模式不读任何货物字段，计价 = 车型全包公里费率 × 里程 × N 车，重量不进钱。
+    #   ⚠️ 文案**由后端给**（`payload.estimate_basis`，与 `/route/cost` 响应的 `estimate_basis`
+    #   是同一个字符串），渲染器不许自己拼 —— 页面与单据各拼一套必然漂移。
+    #   `estimate_notes` 是「缺项」明示（如未提供重量 ⇒ 吊装费未计）：缺项必须写明，
+    #   不许静默少一项让人以为已经含在内。
+    if getattr(payload, "estimate_mode", "normal") == "general_cargo":
+        # payload 漏传/老客户端 ⇒ 用**唯一定义处**的同一句兜底（不是在这里另写一份文案）
+        basis = (getattr(payload, "estimate_basis", "") or "").strip() or (estimate_basis_of("general_cargo") or "")
+        if basis:
+            notes.append(f"{len(notes) + 1}. {basis}。")
+        for extra in (getattr(payload, "estimate_notes", None) or []):
+            txt = str(extra).strip()
+            if txt:
+                notes.append(f"{len(notes) + 1}. {txt}。")
     for n in notes:
         _set_font(doc.add_paragraph().add_run(n), 10.5)
 

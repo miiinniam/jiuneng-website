@@ -17,6 +17,13 @@
 
 口径边界：`floor_area_m2` / `effective_volume_m3` 是 `VehicleModel` 的**派生属性**，不是 CSV 列，
 任何写入都拒绝（否则会被 `DictWriter(extrasaction="ignore")` 静默丢弃，形成"看似改了、其实没改"）。
+
+🆕 v016 T-B（越南 Điều 15 + 超载闸的数据底座）：表尾追加 4 列
+（`axle_count` / `wheelbase_m` / `saddle_to_first_axle_m` / `registered_payload_ton`）。
+防丢列必须**同改四处**：`CSV_COLUMNS`（白名单）+ `_NUMERIC_COLUMNS`/`_POSITIVE_COLUMNS`（校验）+
+`_CREATE_DEFAULTS`（新增缺省）+ `_TEMPLATE_EXAMPLES`（模板行）；读取侧在
+`vehicle_registry.VehicleModel` 的 4 个**可空**字段 + `_validate()` 的容错校验里
+（**留白合法**：`None` 是正常状态，只有「填了但填坏」才报错）。
 """
 
 from __future__ import annotations
@@ -33,9 +40,12 @@ from typing import Callable
 from app.services import rates_store as rs
 from app.services.presets import CARGO_TYPE_RATES
 from app.services.vehicle_registry import (
+    RATE_MODELS,
     VEHICLE_CATEGORIES,
     VEHICLE_MODELS,
     _AXLE_CONFIG_RE,
+    _COUPLABLE_FALSE,
+    _COUPLABLE_TRUE,
     reload_registry as _reload_registry,
 )
 
@@ -63,6 +73,32 @@ CSV_COLUMNS: tuple[str, ...] = (
     # 🆕 2026-09-23：标准车型代码（14 种组合之一）——必须在此列白名单内，
     #   否则 DictWriter(extrasaction="ignore") 会在任何一次写入时把这一列静默丢掉
     "axle_config",
+    # 🆕 2026-09-29（v015.8 T6）：大件配车 7 个新字段列（专家 §3.3 字段缺口表）——
+    #   deck_height_m 台面高（总高 = 台面高 + 货高 + 垫木）、axle_lines 轴线数（拼轴/轴·天）、
+    #   axle_load_per_line_t 单轴线轴荷、deck_width_extendable_m 侧伸后车宽、
+    #   couplable 可否拼轴、min_turn_radius_m 最小转弯半径、rate_model 费率口径
+    #   （per_km 里程价 / per_trip 趟价 / per_axle_day 轴·天）。
+    #   ⚠️ 同 axle_config：漏进白名单 ⇒ 任何一次写盘都会把整列静默丢掉。
+    "deck_height_m",
+    "axle_lines",
+    "axle_load_per_line_t",
+    "deck_width_extendable_m",
+    "couplable",
+    "min_turn_radius_m",
+    "rate_model",
+    # 🆕 2026-09-29（v016 T-B）：越南 TT12/2025/TT-BXD Điều 15 与超载闸的 4 个数据列 ——
+    #   axle_count 轴数（列车总轴数；Điều 15 按轴数分档 / 中国《公路货运车辆超限超载认定标准》
+    #     18/25/31、27/36/43/49t 映射）、
+    #   wheelbase_m 首末轴中心距（Điều 15「轴距每短 1m 减 2t」的输入）、
+    #   saddle_to_first_axle_m 牵引销中心 → 半挂第一轴中心（3.2–4.5 / 4.5–6.5 / >6.5m 分档）、
+    #   registered_payload_ton **核定载质量（超载闸唯一真源）**；留白 ⇒ 调用方回落 max_load_ton。
+    #   ⚠️ 同 axle_config / v015.8 的 7 列：漏进白名单 ⇒ 任何一次写盘都会把整列静默丢掉，
+    #      导入 `mode="replace"` 时更是整列消失（`_normalize_import_row` 只认白名单列）。
+    #   这 4 列一律**追加在表尾**；既有 27 列的名字、顺序与取值一个字节都不许动。
+    "axle_count",
+    "wheelbase_m",
+    "saddle_to_first_axle_m",
+    "registered_payload_ton",
 )
 
 #: 数值列：写入时做「非数字 / 负数」校验；值未变时保留原文
@@ -70,10 +106,20 @@ _NUMERIC_COLUMNS: frozenset[str] = frozenset({
     "max_load_ton", "volume_capacity_m3", "length_m", "width_m", "height_m",
     "max_cargo_height_m", "base_rate_vnd_per_km", "fuel_l_per_100km", "fuel_penalty",
     "fixed_surcharge_vnd", "toll_rate_vnd_per_km", "loading_efficiency", "curb_weight_ton",
+    # 🆕 v015.8 T6：新列里的数值列（couplable / rate_model 是枚举文本，不进这里）
+    "deck_height_m", "axle_lines", "axle_load_per_line_t",
+    "deck_width_extendable_m", "min_turn_radius_m",
+    # 🆕 v016 T-B：4 个新列都是数值列（留白 = 不修改；非法值 ⇒ 中文 VehicleStoreError）
+    "axle_count", "wheelbase_m", "saddle_to_first_axle_m", "registered_payload_ton",
 })
 
 #: 必须严格 > 0 的数值列（其余只要 ≥ 0）
-_POSITIVE_COLUMNS: frozenset[str] = frozenset({"max_load_ton", "length_m", "width_m", "height_m"})
+#  🆕 v016 T-B：4 个新列「填了就必须是正数」——0 轴、0 米轴距、0 吨核定载质量都是脏数据；
+#  留白（空单元格）仍然合法，走 `_coerce_cell` 的「不传 = 不改」分支，不进这里。
+_POSITIVE_COLUMNS: frozenset[str] = frozenset({
+    "max_load_ton", "length_m", "width_m", "height_m",
+    "axle_count", "wheelbase_m", "saddle_to_first_axle_m", "registered_payload_ton",
+})
 
 #: 新增车型必填（`vehicle_registry._load_registry()` 会直接取这些键，缺一个就整库解析失败）
 _REQUIRED_ON_CREATE: tuple[str, ...] = (
@@ -89,6 +135,13 @@ _CREATE_DEFAULTS: dict[str, str] = {
     "suitable_cargo_types": "",
     "notes": "",
     "axle_config": "",          # 🆕 标准车型代码：新增时可留白，之后由车型库编辑/脚本补
+    # 🆕 v016 T-B：4 个新列新增时同样留白（留白合法，不是错误）——
+    #   axle_count 由 axle_config 派生（编辑面板/脚本回填），
+    #   wheelbase_m / saddle_to_first_axle_m / registered_payload_ton 没有来源就不许编造。
+    "axle_count": "",
+    "wheelbase_m": "",
+    "saddle_to_first_axle_m": "",
+    "registered_payload_ton": "",
 }
 
 #: model_id 合法形式（小写字母 / 数字 / 下划线）
@@ -100,6 +153,8 @@ _IMPORT_REQUIRED_COLUMNS: frozenset[str] = frozenset(
 )
 
 #: 模板示例行（注释行提示导入前删除；品类取得全，直接导入不会让任何大类归零）
+#  🆕 v016 T-B：4 个新列在示例行里**留白**（格式在场、值不编造）——轴距/牵引销距/核定载质量
+#  没有厂方或行驶证来源就不许填；`axle_count` 由 `axle_config` 派生，也不由模板猜。
 _TEMPLATE_EXAMPLES: tuple[dict[str, str], ...] = (
     {
         "category": "small_box", "model_id": "example_small_box", "display_name": "示例：小卡车 1.5吨厢货",
@@ -109,6 +164,8 @@ _TEMPLATE_EXAMPLES: tuple[dict[str, str], ...] = (
         "osrm_profile": "driving", "suitable_cargo_types": "normal;other",
         "notes": "示例行：导入前请删除", "max_cargo_height_m": "1.7",
         "loading_efficiency": "0.90", "curb_weight_ton": "",
+        "axle_count": "", "wheelbase_m": "", "saddle_to_first_axle_m": "",
+        "registered_payload_ton": "",
     },
     {
         "category": "flatbed", "model_id": "example_flatbed", "display_name": "示例：平板车 13m",
@@ -118,6 +175,8 @@ _TEMPLATE_EXAMPLES: tuple[dict[str, str], ...] = (
         "osrm_profile": "driving", "suitable_cargo_types": "oversized;heavy_equipment",
         "notes": "示例行：导入前请删除", "max_cargo_height_m": "2.0",
         "loading_efficiency": "0.90", "curb_weight_ton": "",
+        "axle_count": "", "wheelbase_m": "", "saddle_to_first_axle_m": "",
+        "registered_payload_ton": "",
     },
 )
 
@@ -204,6 +263,10 @@ def _coerce_cell(column: str, value, current: str | None) -> str:
             raise VehicleStoreError(f"{column} 不能为负：{number:g}")
         if column in _POSITIVE_COLUMNS and number <= 0:
             raise VehicleStoreError(f"{column} 必须 > 0：{number:g}")
+        if column == "axle_count" and not number.is_integer():
+            # 🆕 v016 T-B：轴数是计数（`TR-0N` 的 N / `axle_lines`），6.5 轴这种值必须当场拒绝，
+            #   不许被 `int()` 静默截断成 6（那会直接改变越南 Điều 15 的总重档位）。
+            raise VehicleStoreError(f"axle_count 必须是整数（轴数）：{value!r}")
         if column == "loading_efficiency" and number > 1:
             raise VehicleStoreError(f"loading_efficiency 必须在 (0, 1] 之间：{number:g}")
         try:
@@ -242,6 +305,33 @@ def _coerce_cell(column: str, value, current: str | None) -> str:
                 f"X ∈ C 中置轴 / A 铰接 / R 载货 / F 全挂）"
             )
         return current_text if code == current_text.strip().upper() else code
+
+    if column == "rate_model":
+        # 🆕 P2-5（v015.8 审核）：对齐 axle_config —— **写前**字段级校验 + 小写归一。
+        # 旧行为靠「写盘 → reload 抛 VehicleRegistryError → _commit 回滚」兜底：
+        # 错误文案不是字段级，且 `PER_TRIP` 这种大小写变体能落盘（下次按磁盘原文的断言就红）。
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return current_text                       # 不传 / 传空 = 不改（留白合法）
+        code = str(value).strip().lower()
+        if code not in RATE_MODELS:
+            raise VehicleStoreError(
+                f"rate_model 非法：{code or '空'}（应为 {' / '.join(RATE_MODELS)}，可留白）"
+            )
+        return current_text if code == current_text.strip().lower() else code
+
+    if column == "couplable":
+        # 🆕 P2-5（v015.8 审核）：yes/no 写前归一（接受 1/yes/y/true 与 0/no/n/false，对齐读取侧
+        # `vehicle_registry._parse_couplable`），落盘统一小写 yes/no —— 非法值不再靠回滚兜底。
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return current_text                       # 不传 / 传空 = 不改（留白合法）
+        token = str(value).strip().lower()
+        if token in _COUPLABLE_TRUE:
+            token = "yes"
+        elif token in _COUPLABLE_FALSE:
+            token = "no"
+        else:
+            raise VehicleStoreError(f"couplable 非法：{value!r}（应为 yes / no，可留白）")
+        return current_text if token == current_text.strip().lower() else token
 
     if value is None:
         return current_text
@@ -602,8 +692,12 @@ def _normalize_import_row(raw: dict) -> dict:
     return {column: _coerce_cell(column, raw.get(column, ""), "") for column in CSV_COLUMNS}
 
 
-def _parse_csv(text: str) -> tuple[list[dict], list[str]]:
-    """解析导入文本 → (规范行, 失败原因清单)。失败行不挡合法行，但调用方会整体拒绝导入。"""
+def _parse_csv(text: str) -> tuple[list[dict], list[str], list[str]]:
+    """解析导入文本 → (规范行, 失败原因清单, 导入表头里**实际出现**的规范列)。
+
+    失败行不挡合法行，但调用方会整体拒绝导入。第三个返回值（v015.8 审核 P2-6）供 merge
+    判断「哪些列真的带了数据」——20 列旧模板导入时缺列的 7 个新列必须保留原值，不许被清空。
+    """
     raw_text = text or ""
     if not raw_text.strip():
         raise VehicleStoreError("文件是空的，没有可导入的内容")
@@ -626,6 +720,8 @@ def _parse_csv(text: str) -> tuple[list[dict], list[str]]:
             "表头无法识别，至少要包含这些列：" + ",".join(CSV_COLUMNS)
             + "（请先下载本系统的车辆库模板）"
         )
+    #: 导入表头里实际出现的规范列（= 本次导入「有资格覆盖」的列；缺列一律不动盘上原值）
+    import_columns = [column for column in header if column in CSV_COLUMNS]
     parsed: list[dict] = []
     failures: list[str] = []
     seen: set[str] = set()
@@ -645,18 +741,19 @@ def _parse_csv(text: str) -> tuple[list[dict], list[str]]:
         parsed.append(row)
     if not parsed and not failures:
         raise VehicleStoreError("文件里没有可导入的车型数据")
-    return parsed, failures
+    return parsed, failures, import_columns
 
 
 def import_csv(text: str, *, mode: str = "merge") -> dict:
     """CSV 导入（**先全量校验，再写盘**；任何一行非法 → 一个字节都不写）。
 
-    * `mode="merge"`：按 `model_id` 覆盖已有行（位置不变），新 id 追加到末尾；
+    * `mode="merge"`：按 `model_id` 覆盖已有行（位置不变），但**只覆盖导入表头里实际出现的列**
+      （v015.8 审核 P2-6：20 列旧模板缺的 7 个新列不许被清空）；新 id 追加到末尾；
     * `mode="replace"`：整表替换为导入内容（仍要过「每个大类 ≥ 1 款」等整库校验）。
     """
     if mode not in ("merge", "replace"):
         raise VehicleStoreError(f"mode 只能是 merge / replace，收到：{mode!r}")
-    parsed, failures = _parse_csv(text)
+    parsed, failures, import_columns = _parse_csv(text)
     if failures:
         raise VehicleStoreError(
             f"导入内容有 {len(failures)} 行校验未通过（未改动任何文件）：" + "；".join(failures)
@@ -675,6 +772,9 @@ def import_csv(text: str, *, mode: str = "merge") -> dict:
         if mode == "replace":
             return header_, [dict(row) for row in parsed]
         incoming = {row["model_id"]: row for row in parsed}
+        # 🆕 P2-6（v015.8 审核）：只覆盖导入表头**实际出现**的列 ——
+        # 20 列旧格式文件导入时缺的列（7 个新列）必须保留盘上原值，不许被 patch 里的空串清空。
+        patchable = [column for column in header_ if column in set(import_columns)]
         out: list[dict] = []
         placed: set[str] = set()
         for row in rows_:
@@ -684,9 +784,8 @@ def import_csv(text: str, *, mode: str = "merge") -> dict:
                 out.append(row)
                 continue
             merged = dict(row)
-            for column in header_:
-                if column in patch:
-                    merged[column] = patch[column]
+            for column in patchable:
+                merged[column] = patch[column]
             out.append(merged)
             placed.add(current_id)
         for row in parsed:                                  # 新 id 追加（保持导入顺序）

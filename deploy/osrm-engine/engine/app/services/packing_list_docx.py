@@ -71,6 +71,9 @@ _AXIS_NOTE_BI = _bi(
 # 图片最大宽度（A4 正文净宽 = 21.0 - 2.0×2 = 17.0 cm，留些余量免贴近页边）
 _IMG_WIDTH_CM = 15.5
 
+# 🆕 v024 T6：摆放表「件重」列的**未称重**标记（三态里的第三态，不许印 0）
+_UNWEIGHED_BI = _bi("未称重", "Chưa cân")
+
 _ILLEGAL_FN = re.compile(r'[\\/:*?"<>|\r\n\t]+')
 
 
@@ -132,7 +135,7 @@ def _norm_placement(p) -> dict:
         "name": str(_g(p, "name", "") or "").strip() or _bi("货物", "Hàng hóa"),
         "x": _f(_g(p, "x", 0)), "y": _f(_g(p, "y", 0)), "z": _f(_g(p, "z", 0)),
         "dx": _f(_g(p, "dx", 0)), "dy": _f(_g(p, "dy", 0)), "dz": _f(_g(p, "dz", 0)),
-        "weight": _f(_g(p, "weight", 0)),
+        "weight": None if _g(p, "weight", None) is None else _f(_g(p, "weight", None)),
         "stackable": bool(_g(p, "stackable", True)),   # 缺省 True（旧数据零影响）
     }
 
@@ -191,8 +194,41 @@ def used_volume_cm3(t: dict) -> float:
     return sum(p["dx"] * p["dy"] * p["dz"] for p in t["placements"])
 
 
+def weight_stats(t: dict) -> tuple[float, int, int]:
+    """(已知件合计 kg, 已知件数, 未称重件数)。
+
+    🆕 v024 T6：「未称重」是三态里的**第三态**，不参与合计；未称重**件数**必须显式报出 ——
+    否则合计看起来是完整的（0 与「未称重」在数值上同值、在口径上完全不同）。
+    """
+    ps = t["placements"]
+    known = [p for p in ps if p["weight"] is not None]
+    return (sum(p["weight"] for p in known), len(known), len(ps) - len(known))
+
+
 def total_weight_kg(t: dict) -> float:
-    return sum(p["weight"] for p in t["placements"])
+    """**已知件**合计（未称重件不计入）。要区分口径请用 `weight_stats()`。"""
+    return weight_stats(t)[0]
+
+
+def weight_phrase(total: float, n_known: int, n_unknown: int, *, unit: bool = True) -> tuple[str, str]:
+    """(中文, 越文) 总重短语。有未称重件时按「已知 N 件 / 其中 M 件未称重」点名；已知 0 件写「—」。
+
+    `n_unknown == 0` 时与 v013 逐字节一致（`1,500 kg`）—— 走的是老路径，不许加字。
+    """
+    kg = (f"{_kg(total)} kg" if unit else _kg(total))
+    if n_unknown <= 0:
+        return (kg, kg)
+    note_cn = f"已知 {n_known} 件 / 其中 {n_unknown} 件未称重"
+    note_vi = f"{n_known} kiện / trong đó {n_unknown} kiện chưa cân"
+    if n_known <= 0:
+        return (f"—（{note_cn}）", f"— ({note_vi})")
+    return (f"{kg}（{note_cn}）", f"{kg} ({note_vi})")
+
+
+def weight_text_bi(total: float, n_known: int, n_unknown: int, *, unit: bool = True) -> str:
+    """`weight_phrase()` 的双语拼装（通用出口）。"""
+    cn, vi = weight_phrase(total, n_known, n_unknown, unit=unit)
+    return _bi(cn, vi)
 
 
 def loading_rate(t: dict) -> float | None:
@@ -231,12 +267,16 @@ def layer_text(t: dict, p: dict, levels: dict) -> str:
 
 
 def _truck_summary_line(t: dict) -> str:
-    total = total_weight_kg(t)
+    total, n_known, n_unk = weight_stats(t)
     rate = loading_rate(t)
+    tail_cn, tail_vi = "", ""
+    if n_unk > 0:                              # 三态里的第三态必须点名（已知 N 件 / 其中 M 件未称重）
+        tail_cn = f"（已知 {n_known} 件 / 其中 {n_unk} 件未称重）"
+        tail_vi = f" ({n_known} kiện / trong đó {n_unk} kiện chưa cân)"
     return _bi(
-        f"共 {len(t['placements'])} 件，总重 {_kg(total)} kg"
+        f"共 {len(t['placements'])} 件，总重 {_kg(total)} kg" + tail_cn
         + (f"，装载率 {rate * 100:.1f}%" if rate is not None else ""),
-        f"Tổng {len(t['placements'])} kiện, tổng trọng lượng {_kg(total)} kg"
+        f"Tổng {len(t['placements'])} kiện, tổng trọng lượng {_kg(total)} kg" + tail_vi
         + (f", tỷ lệ xếp hàng {rate * 100:.1f}%" if rate is not None else ""),
     )
 
@@ -288,16 +328,19 @@ def _add_job_info(doc, job, trucks) -> None:
     dest = str(_g(job, "destination", "") or "").strip() or "—"
     border = str(_g(job, "border_crossing", "") or "").strip() or "—"
     date_str = str(_g(job, "date", "") or "").strip() or "—"
-    total_w = sum(total_weight_kg(t) for t in trucks)
+    total_w = sum(weight_stats(t)[0] for t in trucks)
+    n_known = sum(weight_stats(t)[1] for t in trucks)
+    n_unk = sum(weight_stats(t)[2] for t in trucks)
     total_pcs = sum(len(t["placements"]) for t in trucks)
+    w_cn, w_vi = weight_phrase(total_w, n_known, n_unk)
     rows = [
         (_bi("起点", "Khởi điểm"), origin),
         (_bi("终点", "Điểm đến"), dest),
         (_bi("口岸", "Cửa khẩu"), border),
         (_bi("日期", "Ngày"), date_str),
         (_bi("车数 / 件数 / 总重", "Số xe / Số kiện / Tổng trọng lượng"),
-         _bi(f"{len(trucks)} 车 / {total_pcs} 件 / {_kg(total_w)} kg",
-             f"{len(trucks)} xe / {total_pcs} kiện / {_kg(total_w)} kg")),
+         _bi(f"{len(trucks)} 车 / {total_pcs} 件 / {w_cn}",
+             f"{len(trucks)} xe / {total_pcs} kiện / {w_vi}")),
     ]
     tab = doc.add_table(rows=len(rows), cols=2)
     tab.style = "Table Grid"
@@ -321,15 +364,25 @@ def _add_summary_table(doc, trucks) -> None:
         _cell_text(tab.cell(0, j), h, size=9.5, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
     for i, t in enumerate(trucks, start=1):
         rate = loading_rate(t)
+        w, nk, nu = weight_stats(t)
+        wcell = _kg(w) if nk > 0 else "—"
+        if nu > 0:
+            wcell += _bi(f"（{nu} 件未称重）", f" ({nu} kiện chưa cân)")
         vals = [f"{t['index']}", model_label(t), f"{len(t['placements'])}",
-                _kg(total_weight_kg(t)), f"{rate * 100:.1f}%" if rate is not None else "—"]
+                wcell, f"{rate * 100:.1f}%" if rate is not None else "—"]
         for j, v in enumerate(vals):
             _cell_text(tab.cell(i, j), v, size=9.5,
                        align=WD_ALIGN_PARAGRAPH.CENTER if j != 1 else None)
     last = 1 + len(trucks)
-    total_w = sum(total_weight_kg(t) for t in trucks)
+    total_w = sum(weight_stats(t)[0] for t in trucks)
+    n_known = sum(weight_stats(t)[1] for t in trucks)
+    n_unk = sum(weight_stats(t)[2] for t in trucks)
     total_pcs = sum(len(t["placements"]) for t in trucks)
-    tot = [_bi("合计", "Tổng cộng"), "", f"{total_pcs}", _kg(total_w), ""]
+    tot_wcell = _kg(total_w) if n_known > 0 else "—"
+    if n_unk > 0:
+        tot_wcell += _bi(f"（已知 {n_known} 件 / 其中 {n_unk} 件未称重）",
+                         f" ({n_known} kiện / trong đó {n_unk} kiện chưa cân)")
+    tot = [_bi("合计", "Tổng cộng"), "", f"{total_pcs}", tot_wcell, ""]
     for j, v in enumerate(tot):
         _shade(tab.cell(last, j), "F5F5F5")
         _cell_text(tab.cell(last, j), v, size=9.5, bold=True,
@@ -343,10 +396,10 @@ def _add_summary_table(doc, trucks) -> None:
 
 def _add_truck_info(doc, t: dict, *, is_client: bool) -> None:
     tr = t["truck"]
-    total = total_weight_kg(t)
+    total, n_known, n_unk = weight_stats(t)
     max_w = tr["maxWeight"]
     rate = loading_rate(t)
-    weight_txt = _kg(total)
+    weight_txt = _kg(total) if n_known > 0 else "—"
     if max_w > 0:
         pct = total / max_w * 100
         # 百分比必须写清是「占限重」，否则会和上一行「装载率」（体积口径）看串
@@ -361,6 +414,11 @@ def _add_truck_info(doc, t: dict, *, is_client: bool) -> None:
         (_bi("装载率", "Tỷ lệ xếp hàng"), f"{rate * 100:.1f}%" if rate is not None else "—"),
         (_bi("件数", "Số kiện"), str(len(t["placements"]))),
     ]
+    if n_unk > 0:
+        # 🆕 v024 T6：三态里的第三态**单独一行点名**（「总重」行只报已知合计，不许看起来像完整读数）
+        info.append((_bi("未称重件", "Kiện chưa cân"),
+                     _bi(f"已知 {n_known} 件 / 其中 {n_unk} 件未称重",
+                         f"{n_known} kiện / trong đó {n_unk} kiện chưa cân")))
     if not is_client:
         vol = truck_volume_cm3(t)
         used = used_volume_cm3(t)
@@ -394,7 +452,7 @@ def _add_placements_table(doc, t: dict) -> None:
             f"{i}",
             p["name"],
             f"{_num(p['dx'])}×{_num(p['dz'])}×{_num(p['dy'])}",
-            _kg(p["weight"]),
+            _UNWEIGHED_BI if p["weight"] is None else _kg(p["weight"]),
             f"{_num(p['x'])},{_num(p['y'])},{_num(p['z'])}",
             layer_text(t, p, levels),
             _bi("不叠", "Không chồng") if not p["stackable"] else "—",

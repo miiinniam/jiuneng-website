@@ -12,7 +12,13 @@ LLM 可以像调工具一样调用它们，但后端**不执行**，而是把调
 """
 from __future__ import annotations
 
-from app.ai.spec import CapabilitySpec
+from app.ai.spec import (
+    MODE_GENERAL_CARGO,
+    MODE_NORMAL,
+    MODE_PACKING,
+    MODES,
+    CapabilitySpec,
+)
 
 UI_SPECS: list[CapabilitySpec] = [
     CapabilitySpec(
@@ -23,6 +29,7 @@ UI_SPECS: list[CapabilitySpec] = [
         ),
         parameters={"type": "object", "properties": {}, "required": []},
         kind="read", confirm=False, roles=("internal", "customer"),
+        modes=MODES,   # v024 T8 · 读界面现状：三模式都需要
         prompt_rank=101, prompt_line="读取界面当前状态（任务卡 / 步骤 / 上次报价）",
         prompt_hint="不确定界面现状时先调用",
         locality="frontend",
@@ -39,6 +46,7 @@ UI_SPECS: list[CapabilitySpec] = [
             "required": ["step"],
         },
         kind="read", confirm=False, roles=("internal", "customer"),
+        modes=(MODE_NORMAL, MODE_PACKING,),   # v024 T8 · 区间是 confirm/result/loading：普货没有任务卡也没有装车 3D（§1 边界表）
         prompt_rank=102, prompt_line="切换视图（任务卡 / 结果 / 装车 3D）",
         prompt_hint="用户说\"回到任务卡\"\"看结果\"\"看报价单\"时调用",
         locality="frontend",
@@ -48,6 +56,7 @@ UI_SPECS: list[CapabilitySpec] = [
         description="打开装车 3D 视图（需已有计算结果）。",
         parameters={"type": "object", "properties": {}, "required": []},
         kind="read", confirm=False, roles=("internal", "customer"),
+        modes=(MODE_NORMAL, MODE_PACKING,),   # v024 T8 · 3D 只存在于①③；普货模式无 3D（§1）
         prompt_rank=103, prompt_line="打开装车 3D 视图",
         prompt_hint="用户说\"装车图\"\"怎么装\"\"看下装得下吗\"时调用（需先有结果）",
         locality="frontend",
@@ -91,6 +100,7 @@ UI_SPECS: list[CapabilitySpec] = [
             "required": ["draft"],
         },
         kind="write", confirm=False, roles=("internal", "customer"),
+        modes=(MODE_NORMAL,),   # v024 T8 · 回填的是货物明细任务卡，普货模式没有货物字段（§1）
         prompt_rank=104, prompt_line="回填任务卡（结构化装运单 → 界面字段）",
         prompt_hint="需要把需求写进任务卡时调用（与 extract_shipping_request 等价，二选一）",
         locality="frontend",
@@ -100,6 +110,7 @@ UI_SPECS: list[CapabilitySpec] = [
         description="按任务卡当前内容执行计算（路线 + 费用 + 车数 + 多方案），并把界面切到结果视图。",
         parameters={"type": "object", "properties": {}, "required": []},
         kind="write", confirm=False, roles=("internal", "customer"),
+        modes=(MODE_NORMAL, MODE_GENERAL_CARGO,),   # v024 T8 · 普货也要「执行计算」；装车模式不算钱（§4.5）
         prompt_rank=105, prompt_line="执行计算（等于用户点【开始计算】）",
         prompt_hint="用户说\"算一下\"\"开始计算\"\"报价\"且任务卡已就绪时调用",
         locality="frontend",
@@ -113,6 +124,7 @@ UI_SPECS: list[CapabilitySpec] = [
             "required": ["model_id"],
         },
         kind="write", confirm=False, roles=("internal", "customer"),
+        modes=MODES,   # v024 T8 · 三模式都要选车型（库内选择，§1 边界表）
         prompt_rank=106, prompt_line="选择车型（含大件/超限车型）",
         prompt_hint="用户确认要某个车型时调用",
         locality="frontend",
@@ -129,6 +141,7 @@ UI_SPECS: list[CapabilitySpec] = [
         #    拦它只制造死胡同（客户视角下 AI 无法切回）；硬保护靠 ①客户快照不含成本/利润
         #    ②set_pricing / set_oversize_trip_fee / save_border_fees_default 仍 internal-only。
         kind="write", confirm=False, roles=("internal", "customer"),
+        modes=(MODE_NORMAL, MODE_GENERAL_CARGO,),   # v024 T8 · 内部/客户视角关乎售价与成本；装车模式不报价，切视角无意义
         prompt_rank=107, prompt_line="切换内部 / 客户视角",
         prompt_hint="用户说\"切客户视角\"\"内部看成本\"时调用",
         locality="frontend",
@@ -142,6 +155,7 @@ UI_SPECS: list[CapabilitySpec] = [
             "required": ["margin_rate_pct"],
         },
         kind="write", confirm=True, roles=("internal",),
+        modes=(MODE_NORMAL, MODE_GENERAL_CARGO,),   # v024 T8 · 毛利率是计价侧旋钮；装车模式不算钱
         prompt_rank=108, prompt_line="设置毛利率（内部，需确认）",
         prompt_hint="用户说\"毛利率改成 X%\"时调用；必须复述将要设置的值",
         locality="frontend",
@@ -155,6 +169,7 @@ UI_SPECS: list[CapabilitySpec] = [
             "required": ["trip_fee_vnd"],
         },
         kind="write", confirm=True, roles=("internal",),
+        modes=(MODE_NORMAL,),   # v024 T8 · 大件专线趟价属正常模式的超限单口径；普货按车型问价不带这档
         prompt_rank=109, prompt_line="录入大件专线趟价（需确认）",
         prompt_hint="超限单（单件 > 常规车型上限）用户给了专线价时调用",
         locality="frontend",
@@ -164,6 +179,7 @@ UI_SPECS: list[CapabilitySpec] = [
         description="生成并下载正式 docx 报价单（内部版含成本/利润，客户版只看售价）。需用户确认。",
         parameters={"type": "object", "properties": {}, "required": []},
         kind="write", confirm=True, roles=("internal", "customer"),
+        modes=(MODE_NORMAL, MODE_GENERAL_CARGO,),   # v024 T8 · 报价单只在①②出（普货出简版）；装车模式导出的是装箱单，走 T6 的新能力
         prompt_rank=110, prompt_line="生成正式报价单 docx（需确认）",
         prompt_hint="用户说\"出报价单\"\"导出\"时调用（需先有结果）",
         locality="frontend",
@@ -173,6 +189,7 @@ UI_SPECS: list[CapabilitySpec] = [
         description="把当前口岸费编辑器的值保存为**默认值**（写回 fixed_fees.json，影响以后所有报价）。需用户确认。",
         parameters={"type": "object", "properties": {}, "required": []},
         kind="write", confirm=True, roles=("internal",),
+        modes=(MODE_NORMAL,),   # v024 T8 · 写 fixed_fees.json 会改以后**所有**报价的默认值 ⇒ 只在完整模式下开放（保守取值）
         prompt_rank=111, prompt_line="保存口岸费为默认（写库，需确认）",
         prompt_hint="用户明确说\"存成默认\"时才调用；调用前必须复述会写库",
         locality="frontend",

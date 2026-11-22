@@ -130,6 +130,7 @@ async def execute_tool(
     *,
     role: str = "internal",
     confirmed: bool = False,
+    mode: str | None = None,
 ) -> str:
     """（v006）AI 工具执行入口 —— 转发给能力注册表。
 
@@ -137,7 +138,8 @@ async def execute_tool(
     错误语义与重构前一致（都返回 JSON 字符串，不抛异常）。
     调用契约不变：`await execute_tool(name, args)` 仍可用。
     """
-    return await _registry.invoke(name, arguments, role=role, confirmed=confirmed)
+    # 🆕 v024 T8：`mode` 透传给注册表的模式闸（缺省 None ⇒ 不拦，旧契约不变）
+    return await _registry.invoke(name, arguments, role=role, confirmed=confirmed, mode=mode)
 
 
 async def _calc_cost(args: dict) -> str:

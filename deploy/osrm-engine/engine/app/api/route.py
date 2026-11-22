@@ -23,11 +23,53 @@ from app.services.cost_engine import (
     vehicle_count_breakdown,
 )
 from app.services.osrm_client import OSRMClient, OSRMError, RouteResult
+from app.services import line_pricing      # 🆕 v020 T-D：逐行车型计价（逐行闸门 + 逐行计费 + 整票求和）
 from app.services import price_factor
 from app.services.price_factor import current_price_factor
-from app.services.vehicle_registry import get_model, profile_for_model
+# 🆕 v023：口岸费 scope 的**唯一派生出口**（响应侧与导出侧同源；本文件不许再手写同一条规则）。
+from app.services.quote_format import border_fee_scope_of
+from app.services.vehicle_registry import get_model, models_by_category, profile_for_model
 
 router = APIRouter()
+
+# ── 🆕 v024 T1/T3：普货口径（`estimate_mode="general_cargo"`）的冻结文案 ──────────────
+# 口径必须**印在响应里自证**：普货按「车型全包公里费率 × 里程 × N 车」估算，重量不进钱
+# （整车链路 `compute_cost_full_truck` 的基价/装卸都按车型固定费，不按吨）。
+# 🆕 v024 T3：文案的**定义搬到了 `services/quote_format.py`**（唯一定义处）——
+#   因为报价单渲染器也要印同一句，两处各写一份必然漂移（v023 口岸费规则先例）。
+#   本模块与 `quote_docx_builder` 都从这里取，名字保持不变（外部 import 不受影响）。
+from app.services.quote_format import (  # noqa: E402  （与其它 services import 同段）
+    ESTIMATE_BASIS_GENERAL_CARGO, HEAVY_LIFT_SKIPPED_NOTE, estimate_basis_of,
+)
+GENERAL_CARGO_NEEDS_COUNT = (
+    "普货模式（general_cargo）必须给出车辆数 cost_params.force_vehicle_count（≥1）"
+    " —— 本模式不按货物信息推算车数，也不许缺省按 1 辆算"
+)
+
+
+def is_general_cargo(request: QuoteRequest) -> bool:
+    """普货口径判定（唯一判据，两个入口共用）。"""
+    return getattr(request, "estimate_mode", "normal") == "general_cargo"
+
+
+def _estimate_meta(request: QuoteRequest) -> dict:
+    """普货口径的自证元数据（响应侧单点组装；`normal` ⇒ 全空，老响应逐字节不变）。
+
+    ⚠️ 不设「载荷档位」这类「只标注不改钱」的字段（F1 裁定，门禁 MODE-4 直接判红）：
+    进钱的旋钮是 `cargo.type` 的载荷系数，库里没有折扣档，自造一个不动钱的档位比不设更糟。
+    """
+    if not is_general_cargo(request):
+        return {"estimate_mode": "normal", "estimate_basis": None, "estimate_notes": []}
+    return {
+        "estimate_mode": "general_cargo",
+        "estimate_basis": estimate_basis_of(request.estimate_mode),
+        # 缺项明示必须**与金额一致**（v026 复核实发：无条件注 ⇒ 给 20 t 时响应里同时出现
+        # `vietnam_side.items.heavy_lift = 16000.0`（已计）与「未提供货物重量 ⇒ 吊装费未计」）。
+        # 判据是「本票到底有没有重量」而不是「是不是普货模式」：
+        #   · 没给重量 ⇒ 吊装费真未计 ⇒ 注（缺项必须写明，不许静默少一项）；
+        #   · 给了重量 ⇒ 吊装费按吨真计 ⇒ **不许注**（口径句与金额自相矛盾比少一句更糟）。
+        "estimate_notes": [HEAVY_LIFT_SKIPPED_NOTE] if request.cargo.weight_kg is None else [],
+    }
 
 
 def _resolve_osrm_profile(request: QuoteRequest) -> str | None:
@@ -115,7 +157,8 @@ def build_quote_response(route_result: RouteResult, result: CostResult, vehicle_
                          border_fees: BorderFeesOut | None = None,
                          margin_rate: float | None = None,
                          scope: str | None = None,
-                         price_factor_snapshot: dict | None = None) -> QuoteResponse:
+                         price_factor_snapshot: dict | None = None,
+                         estimate_meta: dict | None = None) -> QuoteResponse:
     """把 OSRM 路线结果 + 费用计算结果组装成统一的响应格式，单条报价和批量报价共用。
     
     vehicle_count > 1 时，各项费用 × vehicle_count 得到总价，cost_per_vehicle 存单车价格。
@@ -211,60 +254,98 @@ def build_quote_response(route_result: RouteResult, result: CostResult, vehicle_
         profit_vnd=profit_vnd,
         margin_rate=margin,
         border_fees=border_fees,
+        # 🆕 v023：响应侧 scope 与导出侧**同源** —— 唯一实现 = `quote_format.border_fee_scope_of()`。
+        #   此前这里是手写的「border_fees 非空 ⇒ included」判定，与
+        #   `quote_format.border_fees_included_of()` 是两处各自实现的同一条规则
+        #   （必漏：只在前端修 scope ⇒ 响应体照旧判三行）。
+        border_fee_scope=border_fee_scope_of(border_fees),
+        # 兼容字段（老消费方）：任一端计入 ⇒ True。分支一律改用上面的 border_fee_scope。
+        border_fees_included=border_fee_scope_of(border_fees) != "none",
+        # 🆕 v024 T1：普货口径自证字段（缺省全空 ⇒ 老响应逐字节不变）
+        **{k: v for k, v in (estimate_meta or {}).items()},
     )
 
 
-def _compute_from_request(request: QuoteRequest, route_result: RouteResult) -> tuple[CostResult, int]:
-    """计算单车费用，返回 (单车CostResult, 需要车辆数)。"""
+def _volume_plausibility_error(weight_kg: float, volume_m3: float | None) -> str | None:
+    """体积合理性判据：**平均密度**（t/m³），不按绝对体积 —— v015.5。
+
+    为什么改（2026-09-28 用户报障）：
+      旧闸「volume_m3 > 2000 ⇒ 422 异常偏大」把**整批货的总方数**当成"一辆车"来比，
+      水电机组/变压器这类超大件工程物流（实测：44 件 / 3,800 t / 4,937 m³ / 密度 0.77）
+      被直接 422 拦死 —— 判据错、量级也错。
+    现在：密度落在 **0.02–10 t/m³** ⇒ 放行（无论方数多大）；填错单位时体积会差 10³ 量级，
+      密度必然落到不可能区间，仍能兜住。阈值与前端 v015.2 密度护栏**同口径**。
+    """
+    if volume_m3 is None or volume_m3 <= 0:
+        return None
+    density = (weight_kg / 1000.0) / volume_m3
+    if 0.02 <= density <= 10:
+        return None
+    if density < 0.02:
+        return (f"货物总体积 {volume_m3:.0f} m³ / 总重 {weight_kg / 1000:.0f} t ⇒ 平均密度仅 {density:.4f} t/m³"
+                "（设备类正常 0.1–8）。请检查尺寸单位：机械/设备尺寸一般按【毫米】输入"
+                "（mm 当 cm 会放大 1000 倍）。如确认数据无误，可在界面上点「仍按当前值计算」后重试。")
+    return (f"货物总体积 {volume_m3:.0f} m³ / 总重 {weight_kg / 1000:.0f} t ⇒ 平均密度 {density:.1f} t/m³，"
+            "已高于钢（7.85）。请检查尺寸单位（是否把米填成了厘米？）。"
+            "如确认数据无误，可在界面上点「仍按当前值计算」后重试。")
+
+
+def _capable_models_for(piece_ton: float) -> list:
+    """库内能承载该单件的车型（载重升序 ⇒ 最经济在前）。查库失败**不许**影响闸门本身。"""
+    found: list = []
+    try:
+        for _arr in (models_by_category() or {}).values():
+            for _m in _arr:
+                if float(getattr(_m, "max_load_ton", 0) or 0) >= piece_ton:
+                    found.append(_m)
+    except Exception:  # noqa: BLE001
+        return []
+    found.sort(key=lambda m: float(getattr(m, "max_load_ton", 0) or 0))
+    return found
+
+
+def _overload_detail(model, piece: float, line_name: str | None = None) -> str:
+    """「超载不可放行」422 文案（v018 骨架 + 库内可承载车型名单）。
+
+    - `line_name=None` ⇒ **v018 逐字不变**（单车型路径）；
+    - `line_name` 非空 ⇒ 点名这一行（v020 T-D 逐行闸门：用户要知道是**哪一行**撞了哪台车）。
+
+    🆕 v018：**报错可行动化**（用户实报：225t 件只被告知「请改选更大载重车型」，
+      但没人告诉他库里有哪台能拉）—— 直接点名库内能承载该件的车型。
+    🆕 v016：区分「超限」（可许可）与「超载」（无许可路径）—— 本闸拦的是**超载**
+      （单件 > 核定载质量），中越两侧都无许可路径（中国《道路交通安全法》第 48 条；
+      越南 TT12/2025/TT-BXD Điều 8 khoản 2 điểm d + Điều 22 khoản 3 điểm a：
+      超核定载质量一律不发许可证）。「允许超限运输配车」开关（cost_params.allow_oversized）
+      **只放宽超限**，对本闸没有任何作用 —— 只有 `allow_oversized_split`
+      （确认按拆分多辆普通车计算）才放行，语义与超限开关不同，不许混用。
+    """
+    _capable = _capable_models_for(piece)
+    _sugg = (
+        "库内可承载本件的车型："
+        + "、".join(f"{m.display_name}（{float(m.max_load_ton):.0f} 吨）" for m in _capable[:3])
+        + "。"
+    ) if _capable else "库内没有能承载本件的车型 ⇒ 只能拆件或录专线趟价。"
+    _line = f"（本行：{line_name}）" if line_name else ""
+    return (
+        f"超载不可放行：单件货物 {piece:.1f} 吨超过车型「{model.display_name}」"
+        f"核定载重 {model.max_load_ton:.0f} 吨{_line}。超载在中/越两侧均无许可路径"
+        "（中国《道路交通安全法》第 48 条严禁超载；越南 TT12/2025/TT-BXD "
+        "Điều 8 khoản 2 điểm d / Điều 22 khoản 3 điểm a 规定超核定载质量不发许可证），"
+        "「允许超限运输配车」开关只放宽**超限**（长/宽/高/车货总重）、不放松本闸。"
+        + _sugg
+        + "确需按多辆普通车拆分计算时，请显式勾选「确认按拆分计算」。"
+    )
+
+
+def _shared_cost_kwargs(request: QuoteRequest, route_result: RouteResult, cargo_items: list[dict]) -> dict:
+    """单车型路径与逐行路径**共用**的计费入参（🆕 v020 T-D 抽取；值与原内联 dict 逐字一致）。
+
+    刻意**不含** `cargo_weight_ton`：单车型路径给「整票吨位 ÷ 车数」，逐行路径给「该行吨位」。
+    """
     cost_params = request.cost_params
-    weight_ton = request.cargo.weight_kg / 1000
-    cargo_items = [i.model_dump() for i in request.cargo.items]
-
-    # 🔒 体积合理性护栏（P1，后端兜底）：mm 被当 cm 会 ×1000，绝不允许算出上千 m³ 的车数
-    if request.cargo.volume_m3 is not None and request.cargo.volume_m3 > 2000:
-        raise HTTPException(
-            status_code=422,
-            detail=f"货物总体积 {request.cargo.volume_m3:.0f} m³ 异常偏大（一辆整车通常不超过上千 m³）。"
-                   "请检查尺寸单位：机械/设备尺寸一般按【毫米】输入。",
-        )
-
-    # 整车模式：计算需要几辆车（🆕 四约束：重量/体积/长件/面积）
-    vehicle_count = 1
-    if request.vehicle.loading_mode == "full_truck" and request.vehicle.vehicle_model_id:
-        model = get_model(request.vehicle.vehicle_model_id)
-        if model:
-            breakdown = vehicle_count_breakdown(
-                model=model,
-                cargo_weight_ton=weight_ton,
-                cargo_volume_m3=request.cargo.volume_m3,
-                cargo_items=cargo_items,
-            )
-            # 🆕 大件/超限拦截：单件重量 > 车型载重 → 该车型装不下这一件，
-            # 不再静默按四约束拆成多辆普通车出假价（越南 >38t 属超限运输）。
-            if breakdown.get("不可分") and not cost_params.allow_oversized_split:
-                piece = float(breakdown.get("最大单件重量吨") or 0)
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        f"单件货物 {piece:.1f} 吨超过车型「{model.display_name}」载重 "
-                        f"{model.max_load_ton:.0f} 吨。越南公路 >38t 属超限运输（需特种车 + 超限许可），"
-                        "请改选【大件/超限】车型，或由操作员录入专线趟价；"
-                        "确需按多辆普通车拆分计算时，请显式勾选「确认按拆分计算」。"
-                    ),
-                )
-            vehicle_count = breakdown["车数"]
-
-    # 装车实际值覆盖：当 carbox 实际车数 > 四约束估算时，按实际值重算（避免报价漏算）
-    if cost_params.force_vehicle_count and cost_params.force_vehicle_count > 0:
-        vehicle_count = cost_params.force_vehicle_count
-
-    # 用单车重量计算
-    per_vehicle_weight_ton = weight_ton / vehicle_count
-
-    common_kwargs = dict(
+    return dict(
         distance_m=route_result.distance_m,
         duration_s=route_result.duration_s,
-        cargo_weight_ton=per_vehicle_weight_ton,
         cargo_type=request.cargo.type,
         empty_return=request.vehicle.empty_return,
         need_loading=request.vehicle.need_loading,
@@ -281,6 +362,115 @@ def _compute_from_request(request: QuoteRequest, route_result: RouteResult) -> t
         loading_rate_vnd_per_ton=settings.loading_rate_vnd_per_ton,
         insurance_rate=settings.insurance_rate,
     )
+
+
+def _compute_line_priced(request: QuoteRequest, cargo_items: list[dict],
+                         route_result: RouteResult) -> tuple[CostResult, int]:
+    """🆕 v020 T-D：逐行车型计价（逐行闸门 → 逐行计费 → 整票求和）→ (单车口径结果, 总车数)。
+
+    上游 `build_quote_response()` 会把单车口径的每个金额项 × 车辆数 ⇒
+    响应金额 = **整票** = Σ 各行（该行费用 × 该行台数），与配车计划同源。
+    """
+    blocked = line_pricing.check_lines(
+        cargo_items, allow_oversized_split=request.cost_params.allow_oversized_split)
+    if blocked is not None:
+        raise HTTPException(
+            status_code=422,
+            detail=_overload_detail(blocked.model, blocked.piece_ton, line_name=blocked.name),
+        )
+
+    plan = line_pricing.price_lines(
+        cargo_items, common_kwargs=_shared_cost_kwargs(request, route_result, cargo_items))
+    # 车数 = Σ 各行台数（INV-2：只出自 车辆数分解()）
+    vehicle_count = plan.total_trucks
+    # 装车实际值覆盖：现逻辑不变（用户「按实际 N 辆重新计价」时传 force_vehicle_count）
+    if request.cost_params.force_vehicle_count and request.cost_params.force_vehicle_count > 0:
+        vehicle_count = request.cost_params.force_vehicle_count
+    # 单车口径 = 整票 ÷ **计划车数**（响应侧再 × 最终车数 ⇒ 金额随实际车数等比换算；
+    # 无覆盖时两者相等 ⇒ 响应金额 == 整票之和，数值级）
+    return line_pricing.scale_cost_result(plan.total, 1.0 / plan.total_trucks), vehicle_count
+
+
+def _compute_from_request(request: QuoteRequest, route_result: RouteResult) -> tuple[CostResult, int]:
+    """计算单车费用，返回 (单车CostResult, 需要车辆数)。
+
+    🆕 v020 T-D：`cargo.items[].vehicle_model_id` **任一非空** ⇒ 「逐行车型计价」
+    （每行用该行自己的计划车型过闸 + 计费，整票 = 各行之和，车数 = Σ 各行台数）；
+    **全部缺省** ⇒ 完全走现路径（单车型 `vehicle.vehicle_model_id` + 现闸门），逐字节不变。
+    逐行模式下 `vehicle.vehicle_model_id`（任务卡车型）**不参与**闸门与计费，也不做库内校验
+    —— 它已被逐行车型取代；没有计划车型的行不在本票计价范围内（见 line_pricing 模块头）。
+    """
+    cost_params = request.cost_params
+    # 🆕 v024 T1：普货口径没有货物信息 ⇒ 重量按 0 处理（**不进钱**，也不许伪造一个数）。
+    cargo_weight_kg = request.cargo.weight_kg
+    general = is_general_cargo(request)
+    weight_ton = (cargo_weight_kg or 0.0) / 1000
+    cargo_items = [i.model_dump() for i in request.cargo.items]
+
+    # 🔒 体积合理性护栏（v015.5：按**密度**判，不按绝对体积；见 _volume_plausibility_error）
+    #    ——「仍按当前值计算」= cost_params.allow_implausible_volume ⇒ 明知可疑也放行
+    # 🆕 v024 T1（守卫 2）：普货无重量时**跳过** —— 否则重量 0 会算出密度 0，
+    #    触发「平均密度仅 0.0000 t/m³」的假 422（尺寸/单位问题，与本票无关）。
+    if not cost_params.allow_implausible_volume and cargo_weight_kg is not None:
+        _vol_err = _volume_plausibility_error(cargo_weight_kg, request.cargo.volume_m3)
+        if _vol_err:
+            raise HTTPException(status_code=422, detail=_vol_err)
+
+    # 🆕 v024 T1：普货口径 —— 车数**唯一来源**是 cost_params.force_vehicle_count：
+    #   ① 不进四约束分解（`vehicle_count_breakdown` 需要重量/体积，无货信息只会印出
+    #      「主因 = 重量 / 1 辆」这种假口径）；
+    #   ② 不产生超载/轴荷结论（不给 heavy_load 提示）；
+    #   ③ 缺省/0 ⇒ 422，**不许静默按 1 辆算**（闸门写在被两个入口共用的本函数内部）。
+    if general:
+        forced = int(cost_params.force_vehicle_count or 0)
+        if forced < 1:
+            raise HTTPException(status_code=422, detail=GENERAL_CARGO_NEEDS_COUNT)
+        vehicle_count = forced
+        common_kwargs = _shared_cost_kwargs(request, route_result, cargo_items)
+        common_kwargs["cargo_weight_ton"] = weight_ton / vehicle_count
+        result = compute_cost_full_truck(
+            vehicle_model_id=request.vehicle.vehicle_model_id, **common_kwargs)
+        return result, vehicle_count
+
+    # 🆕 v020 T-D：逐行车型计价（只针对整车；拼货模式不看逐行车型 ⇒ 旧行为不变）
+    if request.vehicle.loading_mode == "full_truck" and line_pricing.has_line_models(cargo_items):
+        return _compute_line_priced(request, cargo_items, route_result)
+
+    # 整车模式：计算需要几辆车（🆕 四约束：重量/体积/长件/面积）
+    vehicle_count = 1
+    if request.vehicle.loading_mode == "full_truck" and request.vehicle.vehicle_model_id:
+        model = get_model(request.vehicle.vehicle_model_id)
+        if model:
+            breakdown = vehicle_count_breakdown(
+                model=model,
+                cargo_weight_ton=weight_ton,
+                cargo_volume_m3=request.cargo.volume_m3,
+                cargo_items=cargo_items,
+            )
+            # 🆕 大件/超限拦截：单件重量 > 车型载重 → 该车型装不下这一件，
+            # 不再静默按四约束拆成多辆普通车出假价（越南 >38t 属超限运输）。
+            # 🆕 v016（**只改文案，闸门逻辑一字不变**）：区分「超限」（可许可）与「超载」（无许可路径）——
+            #   本闸拦的是**超载**（单件 > 核定载质量），中越两侧都无许可路径
+            #   （中国《道路交通安全法》第 48 条；越南 TT12/2025/TT-BXD Điều 8 khoản 2 điểm d +
+            #     Điều 22 khoản 3 điểm a：超核定载质量一律不发许可证）。
+            #   「允许超限运输配车」开关（cost_params.allow_oversized）**只放宽超限**，
+            #   对本闸没有任何作用 —— 此处只有 `allow_oversized_split`（确认按拆分多辆普通车计算）
+            #   才放行，语义与超限开关不同，不许混用。
+            if breakdown.get("不可分") and not cost_params.allow_oversized_split:
+                piece = float(breakdown.get("最大单件重量吨") or 0)
+                # 🆕 v020 T-D：文案抽为 `_overload_detail()`（本路径 line_name=None ⇒ **逐字不变**）
+                raise HTTPException(status_code=422, detail=_overload_detail(model, piece))
+            vehicle_count = breakdown["车数"]
+
+    # 装车实际值覆盖：当 carbox 实际车数 > 四约束估算时，按实际值重算（避免报价漏算）
+    if cost_params.force_vehicle_count and cost_params.force_vehicle_count > 0:
+        vehicle_count = cost_params.force_vehicle_count
+
+    # 用单车重量计算
+    per_vehicle_weight_ton = weight_ton / vehicle_count
+
+    common_kwargs = _shared_cost_kwargs(request, route_result, cargo_items)
+    common_kwargs["cargo_weight_ton"] = per_vehicle_weight_ton
     if request.vehicle.loading_mode == "full_truck":
         result = compute_cost_full_truck(vehicle_model_id=request.vehicle.vehicle_model_id, **common_kwargs)
     else:
@@ -288,20 +478,72 @@ def _compute_from_request(request: QuoteRequest, route_result: RouteResult) -> t
     return result, vehicle_count
 
 
+def _trim_border_fees(border_fees: BorderFeesOut, *, include_export: bool, include_import: bool) -> BorderFeesOut:
+    """🆕 v023：按端裁剪口岸费 —— **② 两端开关的唯一裁剪点**（在算完之后的单个位置收口）。
+
+    - 被关一端 ⇒ `china_side` / `vietnam_side = None` + 对应 `*_excluded=True`。
+      **不许**写成「该端小计 = 0」：本项目既有「0 元」与「不算」分不清的坑，契约上必须分家。
+    - `china_total` / `vietnam_total` 保留**真实值**（两端都算出来的值）供审计；`total_*` 只累加未关的一端。
+    - ⚠️ 无论关哪一端，**不碰运输服务费**（那是 `margin_rate` / `force_vehicle_count` 的职责）。
+    """
+    china_total = float(getattr(getattr(border_fees, "china_side", None), "subtotal_rmb", 0) or 0)
+    vietnam_total = float(getattr(getattr(border_fees, "vietnam_side", None), "subtotal_rmb", 0) or 0)
+    rate = border_fees.exchange_rate
+    data = border_fees.model_dump()
+    data["china_side"] = border_fees.china_side if include_export else None
+    data["vietnam_side"] = border_fees.vietnam_side if include_import else None
+    data["china_excluded"] = not include_export
+    data["vietnam_excluded"] = not include_import
+    data["china_total"] = round(china_total, 2)
+    data["vietnam_total"] = round(vietnam_total, 2)
+    kept_rmb = (china_total if include_export else 0.0) + (vietnam_total if include_import else 0.0)
+    data["total_rmb"] = round(kept_rmb, 2)
+    data["total_vnd"] = round(kept_rmb * float(rate)) if rate else 0
+    return BorderFeesOut(**data)
+
+
 async def _resolve_border_fees(request: QuoteRequest, vehicle_count: int, scope: str | None = None) -> BorderFeesOut | None:
     """按 pricing 逐项覆盖或固定费率自动算，返回 BorderFeesOut（单条/多方案共用）。
 
     🆕 v008：**境内运输（起终点同国）不涉及进出口口岸费** → 返回 None（前端据此显示「境内运输，不涉及口岸」）。
+    🆕 v022 T4（步骤⑥）：**用户关掉「进出口费用」开关 ⇒ 同样返回 None**（本报价不含口岸费）。
+    🆕 v023（② 两端开关）：`include_export_fees` / `include_import_fees` **按端裁剪** ——
+      有效两端 = `include_border_fees ∧ 该端布尔`（主开关关 ⇒ 两端都关，旧 payload 语义逐字节不变）；
+      被关一端 ⇒ `None`，两端各自真实合计仍回传供审计（`_trim_border_fees`）。
+    ⚠️ 闸门写在本函数内（不是调用点）：`/route/cost`(:452) 与 `/route/alternatives`(:481) 共用，
+    否则「方案候选」会照旧带上口岸费、与主报价单不同源。
+    ⚠️ 两个 None 由响应体的 `border_fees_included=False` + `route.scope` 区分：
+    境内 = 本来就没有口岸；跨境 = 用户主动不含。
     """
     if scope in ("domestic_cn", "domestic_vn"):
         return None
+    # 🆕 v022 T4：开关关闭 ⇒ 不算、不传、不计入（总计 = 运输服务费）。
+    if not request.pricing.include_border_fees:
+        return None
+    # 🆕 v023：按端闸门（两个布尔只作**入参**，展示/分支一律走 `border_fee_scope_of()`）。
+    include_export = bool(getattr(request.pricing, "include_export_fees", True))
+    include_import = bool(getattr(request.pricing, "include_import_fees", True))
+    if not include_export and not include_import:
+        return None                       # 两端都关 ⇒ 与 v022 主开关关同一形态（border_fees=None）
+    override = request.pricing.border_fees_override
+    # 🆕 v021：「口岸费车次」只替换**算口岸费**用的车数；运输费车数（vehicle_count）不动。
+    #   例外项（吊装费按吨、检验费按柜、滞箱费按天）在 calc_border_fees 内按各自口径算，不受此影响。
+    border_vc = vehicle_count
+    if override is not None and override.vehicle_count:
+        border_vc = int(override.vehicle_count)
     base = await calc_border_fees(
-        vehicle_count=vehicle_count,
-        heavy_lift_tons=request.cargo.weight_kg / 1000,
+        vehicle_count=border_vc,
+        # 🆕 v024 T1（守卫 3）：普货无货物重量 ⇒ 吊装费按 0 吨计（响应另附
+        #   `estimate_notes` 明说「未提供货物重量 ⇒ 吊装费未计」，不许静默少一项）。
+        heavy_lift_tons=(request.cargo.weight_kg or 0.0) / 1000,
     )
-    if request.pricing.border_fees_override is not None:
-        base = apply_border_fees_override(base, request.pricing.border_fees_override)
-    return BorderFeesOut(**base)
+    base["vehicle_count"] = border_vc
+    base["fleet_vehicle_count"] = vehicle_count
+    if override is not None:
+        base = apply_border_fees_override(base, override)
+    # 🆕 v023：在**唯一裁剪点**按端收口（两端都开着 ⇒ 逐字节等于 v022 的 `BorderFeesOut(**base)`）。
+    return _trim_border_fees(BorderFeesOut(**base),
+                             include_export=include_export, include_import=include_import)
 
 
 @router.post("/route/cost", response_model=QuoteResponse)
@@ -328,7 +570,8 @@ async def quote_cost(request: QuoteRequest) -> QuoteResponse:
                                 border_fees=border_fees,
                                 margin_rate=request.pricing.margin_rate,
                                 scope=scope,
-                                price_factor_snapshot=current_price_factor())
+                                price_factor_snapshot=current_price_factor(),
+                                estimate_meta=_estimate_meta(request))
 
 
 @router.post("/route/alternatives")
@@ -357,7 +600,8 @@ async def quote_alternatives(request: QuoteRequest) -> dict:
                                             border_fees=border_fees,
                                             margin_rate=request.pricing.margin_rate,
                                             scope=scope,
-                                            price_factor_snapshot=factor_snapshot))
+                                            price_factor_snapshot=factor_snapshot,
+                                            estimate_meta=_estimate_meta(request)))
 
     options.sort(key=lambda o: o.breakdown.cost_total)
     return {"options": options}

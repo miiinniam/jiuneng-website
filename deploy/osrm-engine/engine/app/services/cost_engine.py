@@ -430,6 +430,10 @@ def vehicle_count_breakdown(
         车型地板面积平方米=model.floor_area_m2,
         装载效率=model.loading_efficiency,
         最大单件重量吨=feat["最大单件重量吨"],
+        # 🆕 A7：选型与计价必须同口径，否则「配 1 辆、按 2 辆收费」
+        件总数=feat.get("件总数"),
+        最大单件宽度米=feat.get("最大单件宽度米"),
+        车型宽度米=model.width_m,
     )
 
 

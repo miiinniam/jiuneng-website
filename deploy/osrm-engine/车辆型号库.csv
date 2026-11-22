@@ -1,35 +1,47 @@
-﻿category,model_id,display_name,max_load_ton,volume_capacity_m3,length_m,width_m,height_m,base_rate_vnd_per_km,fuel_l_per_100km,fuel_penalty,fixed_surcharge_vnd,toll_rate_vnd_per_km,osrm_profile,suitable_cargo_types,notes,max_cargo_height_m,loading_efficiency,curb_weight_ton,axle_config
-small_box,small_box_1t5,小卡车 1.5吨厢货,1.5,8,3.0,1.6,1.7,8000,7.0,0,1500000,0,driving,normal;other,2026-07-04:加入固定调度费1.5M+8K/km(源:DuyAnh报价,1.7,0.90,,TR-02
-small_box,small_box_2t5,小卡车 2.5吨厢货,2.5,10,3.3,1.7,1.8,8000,8.5,0,1800000,0,driving,normal;other,2026-07-04:加入固定调度费1.8M+8K/km(源:DuyAnh报价),1.8,0.90,,TR-02
-small_box,small_box_3t5,小卡车 3.5吨厢货,3.5,15,4.2,1.9,1.9,8000,8.0,0,2100000,0,driving,normal;other,2026-07-04:加入固定调度费2.1M+8K/km(源:DuyAnh报价),1.9,0.90,,TR-02
-small_box,small_box_5t,小卡车 5吨厢货,5.0,23.1,5.5,2.0,2.1,21000,10.0,0,0,0,truck,normal;other,基于越南市场常见规格估算，待实际报价核实,2.1,0.90,,TR-02
-small_box,small_box_8t,小卡车 8吨厢货,8.0,32,6.5,2.3,2.2,25000,13.0,0,0,0,truck,normal;other,基于越南市场常见规格估算，待实际报价核实,2.2,0.90,,TR-03-R
-small_box,small_box_10t,小卡车 10吨厢货,10.0,40,7.6,2.3,2.3,28000,16.0,0,0,0,truck,normal;other,基于越南市场常见规格估算，待实际报价核实,2.3,0.90,,TR-03-R
-flatbed,flatbed_6m2,普通平板 6.2米,8.0,,6.2,2.3,,22000,14.0,0,0,0,truck,oversized;normal;other,普通平板；基于越南市场常见规格估算，待实际报价核实,3.0,0.85,,TR-03-A
-flatbed,flatbed_9m0,普通平板 9.0米,12.0,,9.0,2.3,,25500,17.0,0,0,0,truck,oversized;normal;other,普通平板；越南平板车常见9m/9.6m/12.5m/13m/17m几种拖车长度,3.0,0.85,,TR-03-A
-flatbed,flatbed_9m6,普通平板 9.6米,18.0,,9.6,2.4,,29000,20.0,0,0,0,truck,oversized;normal;other,普通平板；载重已从10t更正为18t（9.6m平板挂车实际承载）；待实际报价核实,3.0,0.85,,TR-04-A
-flatbed,flatbed_12m5,普通平板 12.5米,22.0,,12.5,2.5,,26500,25.0,0,3460000,0,truck,oversized;normal;other,普通平板；2026-07-16校准:34K→26.5K+3.46M固定调度费(源:新供应商Sàn/Rào报价27样本,3.0,0.85,,TR-05-A
-flatbed,flatbed_13m,普通平板 13米,26.0,,13.0,2.5,,28000,30.0,0,4500000,0,truck,oversized;normal;other,普通平板；越南5轴半挂GVM上限40t整备~14t合法载重26t；2026-07-16:改为固定调度费模型 28K+4.5M(源:flatbed_12m5校准结论推演,3.0,0.85,,TR-05-A
-flatbed,flatbed_low_9m6,低平板 9.6米,20.0,,9.6,2.5,,32000,22.0,0,0,0,truck,heavy_equipment;oversized,低平板挂车（低底盘）适合重型设备/工程机械；费率含低平板溢价,3.0,0.85,,TR-04-A
-flatbed,flatbed_low_13m,低平板 13米,28.0,,13.0,2.8,,44000,33.0,0,0,0,truck,heavy_equipment;oversized,低平板挂车（低底盘）宽2.8m需超限许可；适合重型设备/工程机械；费率含低平板溢价,3.0,0.85,,TR-06-A
-flatbed,flatbed_low_16m,低平板 16米,35.0,,16.0,3.0,,52000,40.0,0,0,0,truck,heavy_equipment;oversized,低平板挂车（低底盘）宽3.0m+载重35t需超限许可；适合大型工程机械/变压器等超重货；费率含低平板溢价,3.0,0.85,,TR-06-A
-flatbed,flatbed_low_17m5,低平板 17.5米,38.0,,17.5,3.0,,41000,45.0,0,7300000,0,truck,heavy_equipment;oversized,低平板挂车（低底盘）宽3.0m+载重38t需超限许可；2026-07-16:改为固定调度费模型 41K+7.3M(源:flatbed_12m5校准结论推演,3.0,0.85,,TR-06-A
-high_side,high_side_5t,高栏车 5吨,5.0,20,5.5,2.0,1.8,1700,10.5,0,3600000,0,truck,normal;oversized;other,2026-07-04:固定调度费3.6M+1.7K/km(源:DuyAnh,1.8,0.90,,TR-02
-high_side,high_side_8t,高栏车 8吨,8.0,30,6.5,2.3,2.0,2200,14.0,0,3900000,0,truck,normal;oversized;other,2026-07-04:固定调度费3.9M+2.2K/km(源:DuyAnh,2.0,0.90,,TR-03-R
-high_side,high_side_10t,高栏车 10吨,10.0,35,7.6,2.3,2.0,2100,18.0,0,4600000,0,truck,normal;oversized;other,2026-07-04:固定调度费4.6M+2.1K/km(源:DuyAnh,2.0,0.90,,TR-03-R
-high_side,high_side_15t,高栏车 15吨,15.0,43,8.5,2.3,2.2,33000,24.0,0,0,0,truck,normal;oversized;other,基于越南市场常见高栏车规格估算，待实际报价核实,2.2,0.90,,TR-03-R
-high_side,high_side_18t,高栏车 18吨,18.0,55,9.6,2.4,2.4,3000,30.0,0,5700000,0,truck,normal;oversized;other,2026-07-04:固定调度费5.7M+3.0K/km(源:DuyAnh,2.4,0.90,,TR-04-R
-high_side,high_side_25t,高栏车 25吨,24.0,69,12.5,2.4,2.3,46000,36.0,0,0,0,truck,normal;oversized;other,越南4轴单车GVM上限34t保守取24t；高栏车最大规格；基于越南市场常见规格估算，待实际报价核实,2.3,0.90,,TR-04-R
-container,container_20ft,集装箱车 20尺,24.0,33,6.1,2.35,2.39,42000,32.0,0,0,0,truck,normal;other,标准20尺集装箱；ISO 668 1CC规格,2.39,0.90,,TR-05-A
-container,container_40ft,集装箱车 40尺,28.0,67,12.2,2.35,2.39,41550,38.0,0,5730000,0,truck,normal;other,标准40尺集装箱；2026-07-16校准:52K→41.55K+5.73M固定调度费(源:新供应商Fooc报价27样本,2.39,0.90,,TR-06-A
-container,container_40hc,集装箱车 40尺高柜,28.0,76,12.2,2.35,2.70,43600,39.0,0,6000000,0,truck,normal;other,40尺高柜（High Cube）；2026-07-16:按container_40ft×1.05推算 43.6K+6.0M(源:Fooc校准结论比例推演,2.7,0.90,,TR-06-A
-container,container_45hc,集装箱车 45尺高柜,30.0,86,13.7,2.35,2.70,45700,42.0,0,6400000,0,truck,normal;other,45尺高柜（Pallet-Wide）；2026-07-16:按container_40ft×1.10推算 45.7K+6.4M(源:Fooc校准结论比例推演,2.7,0.90,,TR-06-A
-cold_chain,cold_chain_diesel_40ft,冷链车 40尺（油冷）,26.0,63,12.2,2.44,2.12,55000,40.0,0.25,220000,0,truck,cold_chain,40尺冷柜挂车/柴油独立制冷机组；油冷油耗+25%，制冷附加费220K₫,2.12,0.85,,TR-05-A
-cold_chain,cold_chain_electric_40ft,冷链车 40尺（电冷）,26.0,63,12.2,2.44,2.12,57500,37.0,0.10,270000,0,truck,cold_chain,40尺冷柜挂车/电机驱动制冷（主车引擎发电）；电冷油耗+10%，制冷附加费270K₫,2.12,0.85,,TR-05-A
-cold_chain,cold_chain_diesel_45ft,冷链车 45尺（油冷）,28.0,72,13.7,2.44,2.15,60000,44.0,0.25,240000,0,truck,cold_chain,45尺冷柜挂车（总重~43t需超限许可）/柴油独立制冷机组；油冷油耗+25%，制冷附加费240K₫,2.15,0.85,,TR-06-A
-cold_chain,cold_chain_electric_45ft,冷链车 45尺（电冷）,28.0,72,13.7,2.44,2.15,63000,41.0,0.10,290000,0,truck,cold_chain,45尺冷柜挂车（总重~43t需超限许可）/电机驱动制冷（主车引擎发电）；电冷油耗+10%，制冷附加费290K₫,2.15,0.85,,TR-06-A
-cold_chain,cold_chain_diesel_50ft,冷链车 50尺（油冷）,30.0,85,15.2,2.44,2.29,68000,48.0,0.25,260000,0,truck,cold_chain,50尺冷柜挂车（总重~46t需超限许可）/柴油独立制冷机组；油冷油耗+25%，制冷附加费260K₫,2.29,0.85,,TR-06-A
-cold_chain,cold_chain_electric_50ft,冷链车 50尺（电冷）,30.0,85,15.2,2.44,2.29,71000,44.0,0.10,310000,0,truck,cold_chain,50尺冷柜挂车（总重~46t需超限许可）/电机驱动制冷（主车引擎发电）；电冷油耗+10%，制冷附加费310K₫,2.29,0.85,,TR-06-A
-special,special_lowbed_wide_40t,大件加宽低平板 13米,40,,13.0,3.4,,48000,50.0,0,9000000,0,truck,heavy_equipment;oversized,大件/超限车 宽3.4m+载重40t 必办超限运输许可；固定费含许可+路线勘测+护送；费率占位待校准（源:低平板梯度外推 2026-09-20）,3.0,0.85,,TR-06-A
-special,special_lowbed_60t,大件抽拉式低平板 19米,60,,19.0,3.4,,66000,58.0,0,16000000,0,truck,heavy_equipment;oversized,大件/超限车 抽拉式加长19m 载重60t 需超限许可+路线勘测；费率占位待校准（源:低平板梯度外推 2026-09-20）,3.0,0.85,,TR-06-A
-special,special_axle_100t,多轴液压轴线车 100吨,100,,20.0,3.4,,88000,70.0,0,30000000,0,truck,heavy_equipment;oversized,大件/超限车 多轴液压轴线 载重100t 实为按趟为主的专线价；费率占位待校准（源:低平板梯度外推 2026-09-20）,3.0,0.85,,TR-06-A
+﻿category,model_id,display_name,max_load_ton,volume_capacity_m3,length_m,width_m,height_m,base_rate_vnd_per_km,fuel_l_per_100km,fuel_penalty,fixed_surcharge_vnd,toll_rate_vnd_per_km,osrm_profile,suitable_cargo_types,notes,max_cargo_height_m,loading_efficiency,curb_weight_ton,axle_config,deck_height_m,axle_lines,axle_load_per_line_t,deck_width_extendable_m,couplable,min_turn_radius_m,rate_model,axle_count,wheelbase_m,saddle_to_first_axle_m,registered_payload_ton
+small_box,small_box_1t5,小卡车 1.5吨厢货,1.5,8,3.0,1.6,1.7,8000,7.0,0,1500000,0,driving,normal;other,2026-07-04:加入固定调度费1.5M+8K/km(源:DuyAnh报价,1.7,0.90,,TR-02,1.0,2,,,,,per_km,2,,,
+small_box,small_box_2t5,小卡车 2.5吨厢货,2.5,10,3.3,1.7,1.8,8000,8.5,0,1800000,0,driving,normal;other,2026-07-04:加入固定调度费1.8M+8K/km(源:DuyAnh报价),1.8,0.90,,TR-02,1.0,2,,,,,per_km,2,,,
+small_box,small_box_3t5,小卡车 3.5吨厢货,3.5,15,4.2,1.9,1.9,8000,8.0,0,2100000,0,driving,normal;other,2026-07-04:加入固定调度费2.1M+8K/km(源:DuyAnh报价),1.9,0.90,,TR-02,1.1,2,,,,,per_km,2,,,
+small_box,small_box_5t,小卡车 5吨厢货,5.0,23.1,5.5,2.0,2.1,21000,10.0,0,0,0,truck,normal;other,基于越南市场常见规格估算，待实际报价核实,2.1,0.90,,TR-02,1.1,2,,,,,per_km,2,,,
+small_box,small_box_8t,小卡车 8吨厢货,8.0,32,6.5,2.3,2.2,25000,13.0,0,0,0,truck,normal;other,基于越南市场常见规格估算，待实际报价核实,2.2,0.90,,TR-03-R,1.2,3,,,,,per_km,3,,,
+small_box,small_box_10t,小卡车 10吨厢货,10.0,40,7.6,2.3,2.3,28000,16.0,0,0,0,truck,normal;other,基于越南市场常见规格估算，待实际报价核实,2.3,0.90,,TR-03-R,1.2,3,,,,,per_km,3,,,
+flatbed,flatbed_6m2,普通平板 6.2米,8.0,,6.2,2.3,,22000,14.0,0,0,0,truck,oversized;normal;other,普通平板；基于越南市场常见规格估算，待实际报价核实,3.0,0.85,,TR-03-A,1.2,3,,,,,per_km,3,,,
+flatbed,flatbed_9m0,普通平板 9.0米,12.0,,9.0,2.3,,25500,17.0,0,0,0,truck,oversized;normal;other,普通平板；越南平板车常见9m/9.6m/12.5m/13m/17m几种拖车长度,3.0,0.85,,TR-03-A,1.25,3,,,,,per_km,3,,,
+flatbed,flatbed_9m6,普通平板 9.6米,18.0,,9.6,2.4,,29000,20.0,0,0,0,truck,oversized;normal;other,普通平板；载重已从10t更正为18t（9.6m平板挂车实际承载）；待实际报价核实,3.0,0.85,,TR-04-A,1.3,4,,,,,per_km,4,,,
+flatbed,flatbed_12m5,普通平板 12.5米,22.0,,12.5,2.5,,26500,25.0,0,3460000,0,truck,oversized;normal;other,普通平板；2026-07-16校准:34K→26.5K+3.46M固定调度费(源:新供应商Sàn/Rào报价27样本,3.0,0.85,,TR-05-A,1.3,5,,,,,per_km,5,,,
+flatbed,flatbed_13m,普通平板 13米,26.0,,13.0,2.5,,28000,30.0,0,4500000,0,truck,oversized;normal;other,普通平板；越南5轴半挂GVM上限40t整备~14t合法载重26t；2026-07-16:改为固定调度费模型 28K+4.5M(源:flatbed_12m5校准结论推演,3.0,0.85,,TR-05-A,1.35,5,,,,,per_km,5,,,
+flatbed,flatbed_low_9m6,低平板 9.6米,20.0,,9.6,2.5,,32000,22.0,0,0,0,truck,heavy_equipment;oversized,低平板挂车（低底盘）适合重型设备/工程机械；费率含低平板溢价,3.0,0.85,,TR-04-A,0.95,4,,,,,per_km,4,,,
+flatbed,flatbed_low_13m,低平板 13米,28.0,,13.0,2.8,,44000,33.0,0,0,0,truck,heavy_equipment;oversized,低平板挂车（低底盘）宽2.8m需超限许可；适合重型设备/工程机械；费率含低平板溢价,3.0,0.85,,TR-06-A,0.9,6,,,,,per_km,6,,,
+flatbed,flatbed_low_16m,低平板 16米,35.0,,16.0,3.0,,52000,40.0,0,0,0,truck,heavy_equipment;oversized,低平板挂车（低底盘）宽3.0m+载重35t需超限许可；适合大型工程机械/变压器等超重货；费率含低平板溢价,3.0,0.85,,TR-06-A,0.9,6,,,,,per_km,6,,,
+flatbed,flatbed_low_17m5,低平板 17.5米,38.0,,17.5,3.0,,41000,45.0,0,7300000,0,truck,heavy_equipment;oversized,低平板挂车（低底盘）宽3.0m+载重38t需超限许可；2026-07-16:改为固定调度费模型 41K+7.3M(源:flatbed_12m5校准结论推演,3.0,0.85,,TR-06-A,0.9,6,,,,,per_km,6,,,
+high_side,high_side_5t,高栏车 5吨,5.0,20,5.5,2.0,1.8,1700,10.5,0,3600000,0,truck,normal;oversized;other,2026-07-04:固定调度费3.6M+1.7K/km(源:DuyAnh,1.8,0.90,,TR-02,1.3,2,,,,,per_km,2,,,
+high_side,high_side_8t,高栏车 8吨,8.0,30,6.5,2.3,2.0,2200,14.0,0,3900000,0,truck,normal;oversized;other,2026-07-04:固定调度费3.9M+2.2K/km(源:DuyAnh,2.0,0.90,,TR-03-R,1.35,3,,,,,per_km,3,,,
+high_side,high_side_10t,高栏车 10吨,10.0,35,7.6,2.3,2.0,2100,18.0,0,4600000,0,truck,normal;oversized;other,2026-07-04:固定调度费4.6M+2.1K/km(源:DuyAnh,2.0,0.90,,TR-03-R,1.35,3,,,,,per_km,3,,,
+high_side,high_side_15t,高栏车 15吨,15.0,43,8.5,2.3,2.2,33000,24.0,0,0,0,truck,normal;oversized;other,基于越南市场常见高栏车规格估算，待实际报价核实,2.2,0.90,,TR-03-R,1.4,3,,,,,per_km,3,,,
+high_side,high_side_18t,高栏车 18吨,18.0,55,9.6,2.4,2.4,3000,30.0,0,5700000,0,truck,normal;oversized;other,2026-07-04:固定调度费5.7M+3.0K/km(源:DuyAnh,2.4,0.90,,TR-04-R,1.4,4,,,,,per_km,4,,,
+high_side,high_side_25t,高栏车 25吨,24.0,69,12.5,2.4,2.3,46000,36.0,0,0,0,truck,normal;oversized;other,越南4轴单车GVM上限34t保守取24t；高栏车最大规格；基于越南市场常见规格估算，待实际报价核实,2.3,0.90,,TR-04-R,1.4,4,,,,,per_km,4,,,
+container,container_20ft,集装箱车 20尺,24.0,33,6.1,2.35,2.39,42000,32.0,0,0,0,truck,normal;other,标准20尺集装箱；ISO 668 1CC规格,2.39,0.90,,TR-05-A,1.5,5,,,,,per_km,5,,,
+container,container_40ft,集装箱车 40尺,28.0,67,12.2,2.35,2.39,41550,38.0,0,5730000,0,truck,normal;other,标准40尺集装箱；2026-07-16校准:52K→41.55K+5.73M固定调度费(源:新供应商Fooc报价27样本,2.39,0.90,,TR-06-A,1.5,6,,,,,per_km,6,,,
+container,container_40hc,集装箱车 40尺高柜,28.0,76,12.2,2.35,2.70,43600,39.0,0,6000000,0,truck,normal;other,40尺高柜（High Cube）；2026-07-16:按container_40ft×1.05推算 43.6K+6.0M(源:Fooc校准结论比例推演,2.7,0.90,,TR-06-A,1.5,6,,,,,per_km,6,,,
+container,container_45hc,集装箱车 45尺高柜,30.0,86,13.7,2.35,2.70,45700,42.0,0,6400000,0,truck,normal;other,45尺高柜（Pallet-Wide）；2026-07-16:按container_40ft×1.10推算 45.7K+6.4M(源:Fooc校准结论比例推演,2.7,0.90,,TR-06-A,1.55,6,,,,,per_km,6,,,
+cold_chain,cold_chain_diesel_40ft,冷链车 40尺（油冷）,26.0,63,12.2,2.44,2.12,55000,40.0,0.25,220000,0,truck,cold_chain,40尺冷柜挂车/柴油独立制冷机组；油冷油耗+25%，制冷附加费220K₫,2.12,0.85,,TR-05-A,1.5,5,,,,,per_km,5,,,
+cold_chain,cold_chain_electric_40ft,冷链车 40尺（电冷）,26.0,63,12.2,2.44,2.12,57500,37.0,0.10,270000,0,truck,cold_chain,40尺冷柜挂车/电机驱动制冷（主车引擎发电）；电冷油耗+10%，制冷附加费270K₫,2.12,0.85,,TR-05-A,1.5,5,,,,,per_km,5,,,
+cold_chain,cold_chain_diesel_45ft,冷链车 45尺（油冷）,28.0,72,13.7,2.44,2.15,60000,44.0,0.25,240000,0,truck,cold_chain,45尺冷柜挂车（总重~43t需超限许可）/柴油独立制冷机组；油冷油耗+25%，制冷附加费240K₫,2.15,0.85,,TR-06-A,1.55,6,,,,,per_km,6,,,
+cold_chain,cold_chain_electric_45ft,冷链车 45尺（电冷）,28.0,72,13.7,2.44,2.15,63000,41.0,0.10,290000,0,truck,cold_chain,45尺冷柜挂车（总重~43t需超限许可）/电机驱动制冷（主车引擎发电）；电冷油耗+10%，制冷附加费290K₫,2.15,0.85,,TR-06-A,1.55,6,,,,,per_km,6,,,
+cold_chain,cold_chain_diesel_50ft,冷链车 50尺（油冷）,30.0,85,15.2,2.44,2.29,68000,48.0,0.25,260000,0,truck,cold_chain,50尺冷柜挂车（总重~46t需超限许可）/柴油独立制冷机组；油冷油耗+25%，制冷附加费260K₫,2.29,0.85,,TR-06-A,1.6,6,,,,,per_km,6,,,
+cold_chain,cold_chain_electric_50ft,冷链车 50尺（电冷）,30.0,85,15.2,2.44,2.29,71000,44.0,0.10,310000,0,truck,cold_chain,50尺冷柜挂车（总重~46t需超限许可）/电机驱动制冷（主车引擎发电）；电冷油耗+10%，制冷附加费310K₫,2.29,0.85,,TR-06-A,1.6,6,,,,,per_km,6,,,
+special,special_lowbed_wide_40t,大件加宽低平板 13米,40,,13.0,3.4,,48000,50.0,0,9000000,0,truck,heavy_equipment;oversized,大件/超限车 宽3.4m+载重40t 必办超限运输许可；固定费含许可+路线勘测+护送；费率占位待校准（源:低平板梯度外推 2026-09-20）,3.0,0.85,,TR-06-A,0.9,6,,,,,per_trip,6,,,
+special,special_lowbed_60t,大件抽拉式低平板 19米,60,,19.0,3.4,,66000,58.0,0,16000000,0,truck,heavy_equipment;oversized,大件/超限车 抽拉式加长19m 载重60t 需超限许可+路线勘测；费率占位待校准（源:低平板梯度外推 2026-09-20）,3.0,0.85,,TR-06-A,0.9,6,,,,,per_trip,6,,,
+special,special_axle_100t,多轴液压轴线车 100吨,100,,20.0,3.4,,88000,70.0,0,30000000,0,truck,heavy_equipment;oversized,大件/超限车 多轴液压轴线 载重100t 实为按趟为主的专线价；费率占位待校准（源:低平板梯度外推 2026-09-20）,3.0,0.85,,TR-06-A,1.0,6,,,,,per_trip,6,,,
+special,special_lowbed_wide_60t_13m,大件加宽低平板 60吨 13米,60,,13.0,3.4,,66000,58.0,0,12000000,0,truck,heavy_equipment;oversized,v015.8新增:加宽低平板(半挂3轴+牵引3轴)；载重60t/宽3.4m需超限许可；台面高/转弯半径/整备为估算值；费率为建议值待供应商校准,3.0,0.85,16.0,TR-06-A,0.9,6,10.0,,no,15.0,per_km,6,,,
+special,special_lowbed_wide_80t_15m,大件加宽低平板 80吨 15米,80,,15.0,3.4,,78000,62.0,0,18000000,0,truck,heavy_equipment;oversized,v015.8新增:加宽低平板主力(半挂4轴+牵引3轴=7轴；标准代码取TR-06-A示意)；需超限许可；台面高/转弯半径/整备为估算值；费率为建议值待供应商校准,3.0,0.85,20.0,TR-06-A,0.9,7,10.0,,no,15.0,per_km,7,,,
+special,special_extendable_60t_25m,大件抽拉伸缩板 60吨 25米(可伸至30米),60,,25.0,3.0,,72000,58.0,0,16000000,0,truck,heavy_equipment;oversized,v015.8新增:抽拉/伸缩挂(半挂4轴+牵引3轴=7轴；标准轴型代码取TR-06-A示意)；覆盖25m大梁缺口(可伸至30m)；台面高/转弯半径/整备为估算值；费率为建议值待供应商校准,3.0,0.85,18.0,TR-06-A,1.0,7,10.0,,no,18.0,per_km,7,,,
+special,special_extendable_80t_30m,大件抽拉伸缩板 80吨 30米,80,,30.0,3.4,,88000,66.0,0,22000000,0,truck,heavy_equipment;oversized,v015.8新增:30m级伸缩板(半挂5轴+牵引3轴=8轴；标准轴型代码取TR-06-A示意)；台面高/转弯半径/整备为估算值；费率为建议值待供应商校准,3.0,0.85,22.0,TR-06-A,1.0,8,10.0,,no,18.0,per_km,8,,,
+special,special_modular_150t,多轴液压模块车 150吨(20轴线),150,,20.0,3.0,,120000,75.0,0,38000000,0,truck,heavy_equipment;oversized,v015.8新增:液压多轴模块车(3轴/组；20轴线；可侧伸4.4m；可拼轴)；标准轴型代码TR-06-F仅为占位，轴线数以axle_lines=20为准；球阀150t级主力；趟价+轴·天口径；台面高/整备为估算值；费率为建议值待供应商校准,3.0,0.85,24.0,TR-06-F,1.0,20,8.0,4.4,yes,20.0,per_trip,20,,,
+special,special_modular_250t,多轴液压模块车 250吨(35轴线),250,,24.0,3.0,,180000,85.0,0,60000000,0,truck,heavy_equipment;oversized,v015.8新增:液压多轴模块车(35轴线；可侧伸4.4m；可拼轴)；标准轴型代码TR-06-F仅为占位，轴线数以axle_lines=35为准；225t主变级；趟价+轴·天+桥涵项；台面高/整备为估算值；费率为建议值待供应商校准,3.0,0.85,40.0,TR-06-F,1.0,35,8.0,4.4,yes,20.0,per_trip,35,,,
+special,special_beam_bridge_200t,桥式运输车 200吨,200,,32.0,3.5,,160000,80.0,0,48000000,0,truck,heavy_equipment;oversized,v015.8新增:桥式运输车(2车体+吊架)；标准轴型代码TR-06-F仅为占位，轴线数以axle_lines=12为准；超长超宽组合件备选；趟价含勘路护送；台面高/轴线数/整备为估算值；费率为建议值待供应商校准,3.0,0.85,45.0,TR-06-F,1.2,12,10.0,4.0,yes,30.0,per_trip,12,,,
+flatbed,flatbed_low_13m_40t,低平板 13米 40吨,40,,13.0,3.0,,42000,42.0,0,7500000,0,truck,heavy_equipment;oversized,v015.8新增:13m低平板40吨常规档(半挂3轴+牵引3轴=共6轴)；台面高/转弯半径/整备为估算值；费率为建议值待供应商校准,3.0,0.85,14.0,TR-06-A,0.95,6,10.0,,no,15.0,per_km,6,,,
+special,special_blade_ext_45m,风电叶片抽拉车 45米,35,,45.0,3.4,,110000,70.0,0,32000000,0,truck,heavy_equipment;oversized,axle_config TR-06-A 仅为示意（真实列车总轴数以 axle_lines 为准）；A5新增:叶片抽拉式低平板(可运单件长45m；length_m=可运最长件，非地板长)；叶片/超长梁类专用；需超限许可+勘路护送；费率与固定费为占位值，待供应商校准,3.0,0.85,26.0,TR-06-A,1.1,8,10.0,,no,22.0,per_km,8,,,
+special,special_blade_ext_56m,风电叶片抽拉车 56米,32,,56.0,3.4,,130000,74.0,0,42000000,0,truck,heavy_equipment;oversized,axle_config TR-06-A 仅为示意（真实列车总轴数以 axle_lines 为准）；A5新增:叶片抽拉式低平板(可运单件长56m；length_m=可运最长件，非地板长)；覆盖主流陆上叶片；需超限许可+勘路护送；费率与固定费为占位值，待供应商校准,3.0,0.85,30.0,TR-06-A,1.1,10,10.0,,no,28.0,per_km,10,,,
+special,special_blade_ext_62m,风电叶片抽拉车 62米,30,,62.0,3.4,,145000,78.0,0,48000000,0,truck,heavy_equipment;oversized,axle_config TR-06-A 仅为示意（真实列车总轴数以 axle_lines 为准）；A5新增:叶片抽拉式低平板(可运单件长62m；length_m=可运最长件，非地板长)；长叶片干线运输；需超限许可+勘路护送；费率与固定费为占位值，待供应商校准,3.0,0.85,34.0,TR-06-A,1.1,12,10.0,,no,32.0,per_km,12,,,
+special,special_blade_lifter_76m,风电叶片举升车 76米(山地),23.5,,76.0,3.4,,180000,85.0,0,65000000,0,truck,heavy_equipment;oversized,axle_config TR-06-A 仅为示意（真实列车总轴数以 axle_lines 为准）；A5新增:叶片举升车/回转工装(4线8轴，载23.5t，可运单件长76m；length_m=可运最长件，非地板长)；山地二次转运专用，可360°回转+配重；趟价含勘路护送；费率与固定费为占位值，待供应商校准,3.0,0.85,28.0,TR-06-A,1.2,8,10.0,,no,18.0,per_trip,8,,,

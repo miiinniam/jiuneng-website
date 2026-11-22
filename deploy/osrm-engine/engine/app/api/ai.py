@@ -210,6 +210,7 @@ async def ai_chat(request: AIChatRequest):
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
                 app_state=request.app_state,          # 🆕 v006
+                mode=request.mode,                    # 🆕 v024 T8：模式白名单入口
             ):
                 evt_type = event["event"]
                 data_str = json.dumps(event["data"], ensure_ascii=False)

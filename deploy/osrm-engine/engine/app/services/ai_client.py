@@ -192,10 +192,13 @@ class AIClient:
 class StreamChunk:
     """流式响应中的单个 token/事件。"""
     def __init__(self, delta_content: str = "", finish_reason: str | None = None,
-                 tool_calls: list[dict] | None = None):
+                 tool_calls: list[dict] | None = None, delta_reasoning: str = ""):
         self.delta_content = delta_content
         self.finish_reason = finish_reason
         self.tool_calls = tool_calls or []
+        # 🆕 推理模型（deepseek-v4-flash 等）的 reasoning_content。**不参与组稿**，
+        #    只用于诊断「推理烧穿预算 ⇒ finish=length 且正文为空」这类静默失败。
+        self.delta_reasoning = delta_reasoning
 
     def __repr__(self):
         return (f"StreamChunk(content={self.delta_content!r}, "
@@ -234,7 +237,11 @@ async def astream_chat(
         "model": mdl,
         "messages": _messages,
         "temperature": temperature if temperature is not None else 0.3,
-        "max_tokens": max_tokens or 2048,
+        # ⚠️ 不许再硬编码小预算：deepseek-v4-flash 是**推理模型**，推理 token 也计入 max_tokens。
+        #    本机 prompt ≈4,078 token（工具 schema + 系统提示），推理动辄 1,700–2,200 token，
+        #    旧值 2048 会在产出任何 content/tool_calls 前被烧穿 ⇒ finish_reason='length' + 空回复
+        #    ⇒ 界面只剩「思考中」（2026-09-28 真机复现）。缺省一律取 settings。
+        "max_tokens": max_tokens or settings.deepseek_max_tokens,
         "stream": True,
     }
     if tools:
@@ -293,14 +300,19 @@ async def astream_chat(
                             acc["function"]["arguments"] += fn["arguments"]
 
                 content = delta.get("content", "") or ""
+                # 🆕 推理内容（DeepSeek 推理模型：reasoning_content / 兼容 reasoning）
+                reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
 
                 if finish == "tool_calls":
                     yield StreamChunk(
                         finish_reason="tool_calls",
                         tool_calls=[tool_call_acc[i] for i in sorted(tool_call_acc)],
                     )
-                elif content:
-                    yield StreamChunk(delta_content=content, finish_reason=finish)
+                elif content or reasoning:
+                    # 只有推理、没有正文时也要产出 chunk（否则这一整段被静默丢弃，
+                    # 事后无法解释「为什么一个字都没有」）
+                    yield StreamChunk(delta_content=content, delta_reasoning=reasoning,
+                                      finish_reason=finish)
                 elif finish:
                     yield StreamChunk(finish_reason=finish)
 

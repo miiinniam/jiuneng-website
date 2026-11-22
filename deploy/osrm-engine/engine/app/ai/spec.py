@@ -26,6 +26,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+# ── v024 T8 · 模式白名单 ──────────────────────────────────────────────────────
+# 三个字面量在**四处**必须逐字一致：本文件、`ui_spec.py` 的声明、
+# `registry.specs_for_mode()`/`invoke()`、前端 `desktop/renderer/app.js` 的 MODE_* 常量。
+# 改一个字面量 = 四处同批改（门禁 MODE-6 会按本文件的声明与两个提示出口判）。
+MODE_NORMAL = "normal"                  # ① 完整流程（拆件/配车/装车/逐行计价）
+MODE_GENERAL_CARGO = "general_cargo"    # ② 普货按车型问价（无货物明细、无 3D）
+MODE_PACKING = "packing"                # ③ 纯 3D 装车（不算路线、不算钱）
+MODES: tuple[str, ...] = (MODE_NORMAL, MODE_GENERAL_CARGO, MODE_PACKING)
+
 
 @dataclass(frozen=True)
 class CapabilitySpec:
@@ -35,10 +44,26 @@ class CapabilitySpec:
     kind: str = "read"                                  # read | write | destructive
     confirm: bool = False                               # 执行前需用户确认
     roles: tuple[str, ...] = ("internal", "customer")   # 允许角色
+    modes: tuple[str, ...] | None = None                # v024 T8：允许的模式（None = 全模式，与 v023 逐字节一致）
     prompt_rank: int = 99                               # 提示词清单排序
     prompt_line: str = ""                               # 提示词清单行正文
     locality: str = "backend"                           # backend | frontend
     prompt_hint: str = ""                               # 触发条件
+
+    def __post_init__(self) -> None:
+        """v024 T8：模式名写错 ⇒ **导入期**立刻报错。
+
+        照 `registry.register_executor()` 的「未声明能力立刻 KeyError」先例写 ——
+        留到运行期就是「AI 自己乱猜模式名」，而白名单是安全边界，不是提示词偏好。
+        `modes=None`（缺省）表示全模式可见，为本批 19 个既有能力之外的新能力留的显式选择。
+        """
+        if self.modes is None:
+            return
+        unknown = tuple(m for m in self.modes if m not in MODES)
+        if unknown:
+            raise KeyError(
+                f"能力 {self.name} 的 modes 含未定义模式 {unknown}；合法值 = {MODES}"
+            )
 
 
 SPECS: list[CapabilitySpec] = [
@@ -93,6 +118,7 @@ SPECS: list[CapabilitySpec] = [
         kind='read',
         confirm=False,
         roles=('internal', 'customer'),
+        modes=(MODE_NORMAL, MODE_GENERAL_CARGO,),   # v024 T8 · 普货模式的核心就是「车型公里费率 × 里程 × N 车」，同一个算价工具；装车模式不算钱
         prompt_rank=2,
         prompt_line='计算越南境内运输费（核心算价工具）',
         prompt_hint='用户问「X地到Y地运费多少」且不涉及建任务卡时调用（场景 B）',
@@ -107,6 +133,7 @@ SPECS: list[CapabilitySpec] = [
         kind='read',
         confirm=False,
         roles=('internal', 'customer'),
+        modes=(MODE_NORMAL, MODE_GENERAL_CARGO,),   # v024 T8 · 普货可含口岸费（§1「里程 + 单车型运费（可含口岸费）」）；装车模式不算钱
         prompt_rank=3,
         prompt_line='计算口岸操作费（两端分开，不含税）',
         prompt_hint='用户问进出口/口岸费用、报关费、吊装费时调用（不是关税）',
@@ -126,6 +153,7 @@ SPECS: list[CapabilitySpec] = [
         kind='read',
         confirm=False,
         roles=('internal', 'customer'),
+        modes=MODES,   # v024 T8 · 三模式都读同一份车辆型号库（§0「唯一共同点」）
         prompt_rank=4,
         prompt_line='查看车型库',
         prompt_hint='用户问有哪些车型 / 要推荐车型时调用',
@@ -157,6 +185,7 @@ SPECS: list[CapabilitySpec] = [
         kind='read',
         confirm=False,
         roles=('internal', 'customer'),
+        modes=(MODE_NORMAL, MODE_GENERAL_CARGO,),   # v024 T8 · 本质是算价对比；装车模式无路线无钱
         prompt_rank=5,
         prompt_line='多方案对比',
         prompt_hint='用户要对比两条（或多条）路线的成本/时效时调用',
@@ -170,6 +199,7 @@ SPECS: list[CapabilitySpec] = [
         kind='read',
         confirm=False,
         roles=('internal', 'customer'),
+        modes=(MODE_NORMAL, MODE_GENERAL_CARGO,),   # v024 T8 · 装车模式「一个地址框都不出现」（§4.5），给地理编码能力等于开后门
         prompt_rank=6,
         prompt_line='地址查询/坐标',
         prompt_hint='需要把地址/地名转成经纬度时调用（算价内部也会自动转）',
@@ -181,6 +211,7 @@ SPECS: list[CapabilitySpec] = [
         kind='read',
         confirm=False,
         roles=('internal', 'customer'),
+        modes=MODES,   # v024 T8 · 汇率查询不产生任何金额结论，三模式都无害
         prompt_rank=7,
         prompt_line='实时汇率（CNY→VND）',
         prompt_hint='用户问今日汇率时调用',
@@ -222,6 +253,7 @@ SPECS: list[CapabilitySpec] = [
         kind='read',
         confirm=False,
         roles=('internal', 'customer'),
+        modes=(MODE_NORMAL,),   # v024 T8 · 拆件只在完整流程里有意义；普货不按货物明细计费，装车模式不走需求解析
         prompt_rank=1,
         prompt_line='拆解运输需求为结构化装运单（JobDraft），回填任务卡（场景 A 的第一步）',
         prompt_hint='用户描述运输需求时**第一步且唯一第一步**调用',
@@ -252,6 +284,7 @@ SPECS: list[CapabilitySpec] = [
         kind='read',
         confirm=False,
         roles=('internal', 'customer'),
+        modes=(MODE_NORMAL,),   # v024 T8 · 四约束配车属正常模式的配车步骤；普货必须短路跳过四约束（§补 F3），装车车数由装车确认产生
         prompt_rank=8,
         prompt_line='核算车辆数（四约束分解）',
         prompt_hint='用户问「需要几辆车 / 为什么 N 辆车 / 装不装得下」时**必须**调用，用返回的真实四约束分解回答',

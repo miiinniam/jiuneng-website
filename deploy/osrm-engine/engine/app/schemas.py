@@ -36,12 +36,37 @@ class CargoItemInput(BaseModel):
     height_m: float | None = None
     weight_kg: float | None = None
     stackable: bool = True
+    # 🆕 v020 T-D：本行的**计划车型**（配车计划 `/reference/fit-vehicles` 给出的「行 → 车型」）。
+    #   缺省 None ⇒ 与 v019 **逐字节不变**（整票仍按 `vehicle.vehicle_model_id` 单车型计价）；
+    #   只要**任一项**带值 ⇒ `/route/cost` 走「逐行车型计价」：
+    #   每行用它自己的计划车型过闸 + 计费，整票 = 各行费用之和（× 各行台数），车数 = Σ 各行台数。
+    vehicle_model_id: str | None = None
+    # 🆕 v020 T-D2：本行的**计划台数**（配车计划 `/reference/fit-vehicles` 的 `groups[].items[].vehicle_count`）。
+    #   存在且 >0 ⇒ 逐行模式**直接采用**它当该行台数（用户拍板「整票 = 配车计划」，与配车同源；
+    #   INV-2 管的是「不许自创车数算法」——采纳计划值不是新算法）；
+    #   缺省（或 ≤0）⇒ 仍走 `车辆数分解()`（INV-2 旧口径，逐字节不变）。
+    vehicle_count: int | None = None
+    # 🆕 v020 T-D2：本行**分瓣后的单片重**（kg，配车计划 `groups[].items[].piece_w_t` × 1000）。
+    #   存在且 >0 ⇒ 逐行闸门用它当「单件重量」（分瓣行如底环 55t 分 2 瓣 ⇒ 单片 27.5t，
+    #   避免按整件重假 422）；缺省（或 ≤0）⇒ 仍用本行 `weight_kg`（逐字节不变）。
+    piece_weight_kg: float | None = None
 
 
 class CargoInput(BaseModel):
-    weight_kg: float = Field(gt=0)
+    # 🆕 v024 T1：改 `float | None`，**放开的是普货模式**（`estimate_mode="general_cargo"`）——
+    #   普货按「车型全包公里费率 × 里程 × N 车」计价，重量本来就不进钱（整车链路
+    #   `cost_engine.compute_cost_full_truck` 的装卸/基价都按车型固定费，不按吨）。
+    #   ⚠️ 老路径的「重量必填」闸**没有消失**，只是搬到了 `QuoteRequest._check_estimate_mode`
+    #   （Pydantic v2 跨字段校验只能在最外层模型上做）—— 只删 `gt=0` 不补闸 = 给老路径开静默后门。
+    weight_kg: float | None = Field(default=None, gt=0)
     volume_m3: float | None = None
     type: str = "normal"
+    # ⚠️ 不设「载荷档位」（满载 / 半载 / 轻货）这类不动金额的旋钮 —— F1 裁定：货物载荷系数
+    #   `CARGO_TYPE_RATES[cargo_type].rate_multiplier` 才是进钱的旋钮（normal 1.0 / 冷链 1.3 /
+    #   危险品 1.5 / 超限 1.4 / 重装 1.5），库里**没有 <1.0 的折扣档**也没有市场样本，
+    #   自造一个只标注不改钱的字段比不设更糟（本项目先例：三个路况附加费因无数据支撑被归零），
+    #   且门禁 MODE-4 把该字段名列为「已删除的契约字段」直接判红。
+    #   普货口径 = `cargo.type="normal"`（系数恒 1.0）+ `estimate_mode="general_cargo"`。
     value_vnd: float | None = None  # 用于保险费计算
     items: list[CargoItemInput] = Field(default_factory=list)  # 🆕 单件明细
 
@@ -75,6 +100,12 @@ class CostParamsInput(BaseModel):
     # 🆕 大件/超限：单件重量 > 车型载重时默认拒绝报价（该车型装不下这一件）。
     # 用户显式确认「按拆分为多辆普通车计算」时传 true，才按四约束车数拆车出价。
     allow_oversized_split: bool = False
+    # 🆕 v016：「允许超限运输配车」开关的**只读回显**（配车端在 /reference/fit-vehicles；
+    # 本处只用于报价单/装箱单的许可警示与 oversize_note，**不参与任何金额计算**）。
+    # 语义：只放宽「超限」（长/宽/高/车货总重），不放松「超载」（单件 > 核定载重仍 422）。
+    allow_oversized: bool = False
+    # 🆕 v015.5：界面「仍按当前值计算」（体积密度可疑但用户确认）= 跳过后端体积护栏
+    allow_implausible_volume: bool = False
 
 
 class BorderFeesOverride(BaseModel):
@@ -84,6 +115,15 @@ class BorderFeesOverride(BaseModel):
     """
     china_side: dict[str, float] = Field(default_factory=dict)
     vietnam_side: dict[str, float] = Field(default_factory=dict)
+    # 🆕 v021：口岸费「车次」——只替换**算口岸费**用的车数（影响每车固定项：
+    #   中国 出口报关/货场费/堆场卸货/装车费，越南 报关费/货场费），
+    #   **不碰运输费**（那是 cost_params.force_vehicle_count 的职责），
+    #   也**不碰按吨/按柜的派生项**（吊装费/检验费/滞箱费等）。
+    #   缺省 None ⇒ 用自动配车车数，v020 行为逐字节不变。
+    vehicle_count: int | None = Field(
+        default=None, ge=1, le=99,
+        description="口岸费车次（每车固定费 ×N）；None=按自动配车车数",
+    )
 
 
 class PricingInput(BaseModel):
@@ -96,6 +136,21 @@ class PricingInput(BaseModel):
                                       description="毛利率覆盖（0–0.95），None=用默认")
     border_fees_override: BorderFeesOverride | None = Field(default=None,
                                                             description="口岸费逐项覆盖(RMB)，None=自动计算")
+    # 🆕 v022 T4（步骤⑥）：本单是否**计算并计入**进出口口岸费。
+    #   True（缺省）⇒ 与 v021 逐字节一致；False ⇒ 不算口岸费，响应 border_fees=None
+    #   且 border_fees_included=False（前端出「运输服务费 / 总计」两行 + 「本报价不含进出口费用」脚注）。
+    #   ⚠️ 只管口岸费，**不动运输服务费**（那是 margin_rate / force_vehicle_count 的职责）。
+    include_border_fees: bool = Field(
+        default=True, description="本单是否计入进出口口岸费；False=纯运输报价")
+    # 🆕 v023（② 口岸费「两端开关」）：按端闸门。缺省 True ⇒ 与 v022 逐字节一致。
+    #   有效两端 = `include_border_fees ∧ include_export_fees` / `include_border_fees ∧ include_import_fees`
+    #   （主开关关 ⇒ 两端都关，旧 payload 只发 include_border_fees 时语义不漂移）。
+    #   真实场景（玖能实物单据）：交货到友谊关/口岸起 ⇒ 只报越南端 ⇒ include_export_fees=False；
+    #   「仅中国端」档案里暂无实物样本，故只做契约级覆盖，不做假验收。
+    include_export_fees: bool = Field(
+        default=True, description="本单是否计入**中国端**（出口）口岸费；False=仅报越南端/口岸起")
+    include_import_fees: bool = Field(
+        default=True, description="本单是否计入**越南端**（进口）口岸费；False=仅报中国端")
 
 
 class QuoteRequest(BaseModel):
@@ -104,6 +159,14 @@ class QuoteRequest(BaseModel):
     vehicle: VehicleInput
     cost_params: CostParamsInput = Field(default_factory=CostParamsInput)
     pricing: PricingInput = Field(default_factory=PricingInput)  # 🆕 手动定价
+    # 🆕 v024 T1：计费口径模式。
+    #   `normal`（缺省）= 现行行为，老 payload 逐字节不变；
+    #   `general_cargo` = 普货口径：只给「两地 + 车型 + 车数」即可出价，
+    #   不读任何货物字段，计价 = 车型全包公里费率 × 里程 × N 车（重量不进钱），
+    #   N 的唯一来源 = `cost_params.force_vehicle_count`（必填 ≥1）。
+    #   ⚠️ 枚举值与前端三模式（`normal` / `general_cargo` / `packing`）**同一套词表**：
+    #   装车模式（packing）根本不打本接口，故此处恰两档（门禁 MODE-4 按此判）。
+    estimate_mode: Literal["normal", "general_cargo"] = "normal"
 
     @model_validator(mode="after")
     def _check_volume_required_for_consolidated(self) -> "QuoteRequest":
@@ -111,6 +174,36 @@ class QuoteRequest(BaseModel):
         # Pydantic v2 只能在最外层模型上做
         if self.vehicle.loading_mode == "consolidated" and self.cargo.volume_m3 is None:
             raise ValueError("拼货模式（consolidated）必须填写 cargo.volume_m3")
+        return self
+
+    @model_validator(mode="after")
+    def _check_estimate_mode(self) -> "QuoteRequest":
+        """🆕 v024 T1：普货模式的三条契约闸 + **老闸补回**。
+
+        ⚠️ `CargoInput.weight_kg` 放开成 `float | None` 之后，只删 `gt=0` 不在这里补闸
+        **等于给老路径开了一个静默后门**：老调用少发重量会一路走到
+        `weight_ton = None / 1000` 或算出 0 吨的假价。所以缺省口径下必须继续拦。
+        """
+        weight = self.cargo.weight_kg
+        if self.estimate_mode != "general_cargo":
+            if weight is None or weight <= 0:
+                raise ValueError(
+                    "货物重量（cargo.weight_kg）必填且必须大于 0 —— "
+                    "只有普货模式（estimate_mode=\"general_cargo\"）允许不给货物信息，"
+                    "该模式必须同时给出 cost_params.force_vehicle_count（≥1）"
+                )
+            return self
+        if self.vehicle.loading_mode == "consolidated":
+            raise ValueError(
+                "普货模式（general_cargo）只支持整车（full_truck）："
+                "拼货（consolidated）按容量占比分摊，缺货物重量/体积无法计算"
+            )
+        fvc = self.cost_params.force_vehicle_count
+        if fvc is None or fvc < 1:
+            raise ValueError(
+                "普货模式（general_cargo）必须给出车辆数 cost_params.force_vehicle_count（≥1）"
+                " —— 本模式不按货物信息推算车数，也不许缺省按 1 辆算"
+            )
         return self
 
 
@@ -183,13 +276,25 @@ class BorderFeeSide(BaseModel):
 
 
 class BorderFeesOut(BaseModel):
-    china_side: BorderFeeSide = Field(default_factory=BorderFeeSide)
-    vietnam_side: BorderFeeSide = Field(default_factory=BorderFeeSide)
+    # 🆕 v023：被关掉的一端 ⇒ `None`（+ 对应的 `*_excluded=True`），**不许**写成「小计 = 0」
+    #   ——「0 元」与「不算」必须在契约上分清（本项目既有「0 ≠ 缺省」的坑）。
+    china_side: BorderFeeSide | None = Field(
+        default=None, description="中国端（出口）明细；被关一端 = None")
+    vietnam_side: BorderFeeSide | None = Field(
+        default=None, description="越南端（进口）明细；被关一端 = None")
+    china_excluded: bool = False           # 🆕 v023：中国端被开关关掉
+    vietnam_excluded: bool = False         # 🆕 v023：越南端被开关关掉
+    china_total: float = 0                 # 🆕 v023：中国端**真实**合计（供审计，不被开关改写）
+    vietnam_total: float = 0               # 🆕 v023：越南端**真实**合计（供审计）
+    # `total_*` 只累加**未关的一端**（前端/导出的口岸费行金额以此为准）
     total_rmb: float = 0
     total_vnd: float = 0
     exchange_rate: float | None = None
     manual: bool = False                   # 🆕 True=手动设定进出口费（单行）
     manual_total_rmb: float | None = None  # 🆕 手动设定合计(RMB)
+    # 🆕 v021：口岸费「车次」口径回显（前端显示「口岸费按 N 车次 · 运输费按 M 辆」）
+    vehicle_count: int | None = None        # 算口岸费用了几车次（= 覆盖值或自动车数）
+    fleet_vehicle_count: int | None = None  # 自动配车车数（运输费/车队口径）
 
 
 class QuoteResponse(BaseModel):
@@ -203,12 +308,29 @@ class QuoteResponse(BaseModel):
     profit_vnd: float = 0         # 利润 = 成本 × margin_rate
     margin_rate: float = 0        # 毛利率
     border_fees: BorderFeesOut | None = None   # 进出口口岸费（中国段+越南段，RMB+VND）
+    # 🆕 v023：口岸费**分支的唯一真源**（前端 9 个消费点只许调它，不许各写两个布尔判断）。
+    #   唯一实现 = `quote_format.border_fee_scope_of()`；build_quote_response 在这里单点回传，
+    #   与导出侧 `quote_format.border_fee_scope()` 同源（此前是两处手写同一规则，必漏）。
+    border_fee_scope: Literal["none", "export_only", "import_only", "both"] | None = None
+    # 🆕 v022 T4：本单是否**计入任一端**口岸费（兼容字段 = `border_fee_scope != "none"`）。
+    #   ⚠️ False 有两种成因，前端按 `route.scope` 区分：
+    #     domestic_cn/vn ⇒「境内运输，不涉及口岸费」；cross_border ⇒「本单不含进出口费用」（开关关）。
+    #   缺省 False ⇒ 未显式说明的报价一律按「不含口岸费」处理（宁可少说，不可虚报）。
+    border_fees_included: bool = False
     # 🆕 v015.4：路线 profile 兑现情况的**镜像字段**（与 route.* 同值）。
     #   前端地图面板 / 导出件任取一处即可，避免漏读导致「以为做过限高限重校验」。
     profile_requested: str | None = None
     profile_used: str | None = None
     profile_honored: bool = True
     profile_note: str | None = None
+    # ── 🆕 v024 T1：普货口径的**自证字段**（消费者要读到，不是源码里有）──
+    #   `normal`（缺省）⇒ 与 v023 逐字节一致。
+    estimate_mode: Literal["normal", "general_cargo"] = "normal"
+    # 普货口径文案（冻结，不许写成会让人以为是称重算的措辞）：
+    #   「按「车型全包公里费率 × 里程 × N 车」估算，未按货物重量计费」
+    estimate_basis: str | None = None
+    # 普货口径的口径说明（如「未提供货物重量 ⇒ 吊装费未计」）—— 缺项要**说清**，不许静默
+    estimate_notes: list[str] = Field(default_factory=list)
 
 
 class TemplateCreate(BaseModel):
@@ -361,6 +483,9 @@ class AIChatRequest(BaseModel):
     max_tokens: int | None = None
     # 🆕 v006：界面状态快照（前端 getAppState() 产物，可空；仅用于让 AI 知道界面现状）
     app_state: dict | None = None
+    # 🆕 v024 T8：当前界面模式（前端发）。缺省 "normal" —— 三模式里 normal 是全集，
+    #   老调用行为逐字不变；写错模式名 422，不许静默降级（白名单是安全边界）。
+    mode: Literal["normal", "general_cargo", "packing"] = "normal"
 
 
 class ActionAuditRequest(BaseModel):
@@ -407,9 +532,26 @@ class QuoteExportRequest(BaseModel):
     breakdown: dict = Field(default_factory=dict)
     validity_days: int = 30
     border_fees: BorderFeesOut | None = None
+    # 🆕 v023：报价单的**唯一分支源**（两个渲染器只许调 `quote_format.border_fee_scope()`）。
+    #   显式传 none/export_only/import_only/both ⇒ 以它为准；缺省 None ⇒ 由 `border_fees` 按端派生。
+    border_fee_scope: Literal["none", "export_only", "import_only", "both"] | None = None
+    # 🆕 v022 T4：报价单是否出「进出口口岸费」行（兼容字段）。
+    #   **None（缺省）= 由 `border_fee_scope()` 派生**（显式 `border_fee_scope` > 本字段 > `border_fees` 按端）
+    #   —— 前端此刻只发 `border_fees: q.border_fees || null`、不发本字段，缺省必须跟它走，
+    #   **不能 fail-open 成 True**（否则开关关掉的报价，导出的 docx 照样印口岸费行 + `0 VND`，INV-C 直接红）。
+    #   显式传 True/False ⇒ 以它为准（保留手工覆盖的口子；False ⇒ scope=none）。
+    border_fees_included: bool | None = None
+
     # 🆕 大件/超限：专线趟价（手工录入，未走成本模型，实报实销）
     manual_oversize_fee_vnd: float = 0
     oversize_note: str = ""
+
+    # 🆕 v024 T3：普货口径随单据走（缺省 `normal` + 空串 ⇒ 老调用方逐字节不变）。
+    #   `estimate_basis` / `estimate_notes` **由前端原样回显 `/route/cost` 响应里的同名字段**，
+    #   渲染器只负责印、不负责拼 —— 页面与单据共用一个字符串才不会各说一套。
+    estimate_mode: Literal["normal", "general_cargo"] = "normal"
+    estimate_basis: str = ""
+    estimate_notes: list[str] = Field(default_factory=list)
 
 
 class BorderFeesSaveRequest(BaseModel):
@@ -560,7 +702,11 @@ class PackingPlacement(BaseModel):
     dx: float = 0
     dy: float = 0
     dz: float = 0
-    weight: float = 0
+    # 🆕 v024 T6（MODE-2 契约三态）：重量**未称重 = `None`**，不是 `0`。
+    #   `float = 0` 会把「没称过」静默写成「称出来是 0 kg」⇒ 装车单/汇总的合计看起来完整却是在说谎。
+    #   `None` 是**第三态**：不参与合计，但件数必须被点名（导出侧印「已知 N 件 / 其中 M 件未称重」）。
+    #   老客户端照旧传数字 ⇒ 逐字节同 v013；不传该键的件一律按未称重处理（不再当成 0）。
+    weight: float | None = None
     stackable: bool = True
 
 

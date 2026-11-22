@@ -1,11 +1,11 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.config import settings
 from app.services.exchange_rate import force_refresh, get_exchange_rate
 from app.services.presets import CARGO_IMPORT_EXPORT_ESTIMATES, CARGO_TYPE_RATES
 from app.services.vehicle_registry import models_by_category, get_model, VEHICLE_MODELS, VehicleModel
 from app.services import 费用计算公式 as 公式
-from app.services.border_fees import calc_border_fees, save_border_fees_config
+from app.services.border_fees import calc_border_fees, save_border_fees_config, VEHICLE_SCALING_ITEMS
 from app.schemas import BorderFeesSaveRequest
 from app.services.ai_client import AIClient, AIClientError
 
@@ -109,37 +109,190 @@ async def fit_vehicles(payload: dict) -> dict:
 
     payload:
       { weight_kg, volume_m3?, cargo_type?,
-        items?: [{name?, length_m, width_m, height_m?, weight_kg, count, stackable}] }
+        allow_oversized?: bool,                              # 🆕 v016：允许超限运输配车（默认 false）
+        distance_km?: float,                                 # 🆕 v016：有距离才比总价（否则 rate_only）
+        locked_models?: {line_id: model_id},                 # 🆕 v017：逐行锁定车型（默认无）
+        accepted_pairs?: [pair_id] | {pair_id: bool},        # 🆕 v017：共车组合采纳（默认全采纳）
+        plan_confirmed?: bool,                               # 🆕 v017：只回显 + 审计（不参与金额）
+        fold_shape?: "auto"|"integral"|"n2"|"n4"|"n6"|"n8",   # 🆕 v015.8 T5：顶层折叠形态
+        shape?: ...                                          # 旧式键：只在**折叠词表**内才当折叠值；
+                                                             # v013 几何值 box/cylinder/… 原样透传不管
+        inner_d_m?: float,                                   # 🆕 T5：顶层内径缺省（行级 inner_d_m 优先）
+        items?: [{name?, length_m, width_m, height_m?, weight_kg, count, stackable,
+                  fold_shape?, shape?, inner_d_m?, split_n?}] }
     返回:
       { recommended, groups: [{model_id, display_name, category, max_load_ton,
-                               vehicle_count, reason, items:[...]}],
-        fits, total_trucks, vehicle_breakdowns, oversize, message,
+                               vehicle_count, transport_units, reason,
+                               dim_flags, permit_flags, count_doctrine, axle_lines,
+                               breakdown,   # 🆕 v023：本组四约束分解 {车数,重量,体积,长度,面积,主因}
+                               oversize_released, pair_total_width_m,
+                               pairs: [{pair_id, line_ids, line_names, per_truck, trucks,
+                                        rule_id, reason, accepted}],   # 🆕 v017：共车组合
+                               locked: {line_id: model_id},            # 🆕 v017：逐行锁定回显
+                               items:[...]}],
+        fits, total_trucks, vehicle_breakdowns,
+        confirm: {total_trucks, one_item_trucks, multi_item_trucks,  # 🆕 v017：确认回显
+                  lines: [{line_id, model, locked}], plan_confirmed},
+        oversize: {..., policy: {allow_oversized, released, hard_blocked, legal_basis}},
         # ── v011 新增（前端⑥口径卡 / INV-1 追溯）──
         reason, mixed, needs_split, split_hint, engine, category_fallback }
     """
     from app.services import fleet_planner as pl
 
     items = payload.get("items") or []
-    plan = pl.plan_fleet(
+    # 🆕 v016：「允许超限运输配车」开关 —— 逐单决策，非法值**大声报错**（照 fold_shape 的惯例，
+    #   不静默按 False 跑；错值静默反而会让用户以为开关生效了）。
+    allow_oversized = payload.get("allow_oversized", False)
+    if allow_oversized is None:
+        allow_oversized = False
+    if not isinstance(allow_oversized, bool):
+        raise HTTPException(422, f"allow_oversized 必须是 true/false（收到 {allow_oversized!r}）—— "
+                                 "该开关只放宽「超限」（4.5~5.5m 宽 / 4.75~5.5m 总高可配车 + 许可标），"
+                                 "不放松「超载」（单件超核定载重仍不自动配车）")
+    # 🆕 v017 T-2：配车契约扩展（三项都可缺省 ⇒ 与 v016 逐字节同口径）。
+    #   `locked_models` 逐行锁定车型：非法车型 / 未知 line_id ⇒ 422 带中文原因（照 allow_oversized
+    #   的「大声报错」惯例，不静默忽略 —— 静默忽略会让用户以为锁定生效了）。
+    locked_models_in = payload.get("locked_models")
+    locked_models: dict[str, str] = {}
+    if locked_models_in is not None:
+        if not isinstance(locked_models_in, dict):
+            raise HTTPException(422, f"locked_models 必须是 {{line_id: 车型}} 映射（收到 {locked_models_in!r}）"
+                                     " —— line_id 取货物行的 line_id（缺省为行序号从 0 起），"
+                                     "车型取车辆库 model_id")
+        known_ids = [pl.line_id_of(raw, i) for i, raw in enumerate(items)]
+        for k in locked_models_in:
+            if str(k).strip() not in known_ids:
+                raise HTTPException(422, f"locked_models 里的 line_id {k!r} 不存在于本次货物清单"
+                                         f"（合法 line_id：{known_ids}）—— 逐行锁定必须指向本票的某一货行")
+        bad_models = [str(v) for v in locked_models_in.values() if get_model(str(v or "").strip()) is None]
+        if bad_models:
+            raise HTTPException(422, f"locked_models 里的车型 {bad_models!r} 不在车辆库中 —— "
+                                     "合法车型 = /api/v1/reference/vehicle-models 返回的 model_id")
+        locked_models = {str(k).strip(): str(v).strip() for k, v in locked_models_in.items()}
+    #   `accepted_pairs` 共车组合采纳：缺省 = 全采纳；`{pair_id: false}` ⇒ 该组合不共车（车数上调）；
+    #   `[pair_id]` 列表 = 白名单（只采纳列出的组合，`[]` = 全部不共车）。非法值大声报错。
+    accepted_pairs_in = payload.get("accepted_pairs")
+    accepted_pairs = None
+    if accepted_pairs_in is not None:
+        if isinstance(accepted_pairs_in, dict):
+            for k, v in accepted_pairs_in.items():
+                if not isinstance(v, bool):
+                    raise HTTPException(422, f"accepted_pairs[{k!r}] 必须是 true/false（收到 {v!r}）—— "
+                                             "显式 false 表示该共车组合不采纳（按「不共车」重算，车数上调）")
+            accepted_pairs = {str(k): bool(v) for k, v in accepted_pairs_in.items()}
+        elif isinstance(accepted_pairs_in, (list, tuple)):
+            for v in accepted_pairs_in:
+                if isinstance(v, (dict, list, tuple)) or v is None:
+                    raise HTTPException(422, f"accepted_pairs 列表的元素必须是 pair_id 字符串（收到 {v!r}）——"
+                                             " pair_id 取本接口 groups[].pairs[].pair_id")
+            accepted_pairs = [str(v) for v in accepted_pairs_in]
+        else:
+            raise HTTPException(422, f"accepted_pairs 必须是 [pair_id] 列表或 {{pair_id: true/false}} 映射"
+                                     f"（收到 {accepted_pairs_in!r}）")
+    #   `plan_confirmed` 只用于回显 + 审计（「已确认车型与车数」动作），**不参与任何金额**。
+    plan_confirmed = payload.get("plan_confirmed", False)
+    if plan_confirmed is None:
+        plan_confirmed = False
+    if not isinstance(plan_confirmed, bool):
+        raise HTTPException(422, f"plan_confirmed 必须是 true/false（收到 {plan_confirmed!r}）—— "
+                                 "该字段只用于回显与审计（记录「已确认车型与车数」动作），不参与金额计算")
+    plan_confirmed = bool(plan_confirmed)
+    # 🆕 热修 v015.8（P1-1）：折叠策略键 = **`fold_shape`**（行级与顶层均支持；顶层 python 形参名 `shape=` 保留）。
+    #   旧式顶层 `shape` 只在**折叠词表**内才被转发（v013 几何值 box/cylinder/… 原样透传不管、不报错）；
+    #   非法 `fold_shape` 值由形态层 `_norm_shape` 大声报错（本端点译成 422，不静默）。
+    top_fold = payload.get("fold_shape")
+    if top_fold is None or not str(top_fold).strip():
+        top_fold = pl._fold_vocab(payload.get("shape")) or "auto"
+    shape = str(top_fold)
+    top_inner_d = payload.get("inner_d_m")
+    try:
+        top_inner_d = float(top_inner_d) if top_inner_d is not None else None
+    except (TypeError, ValueError):
+        top_inner_d = None
+    # 🆕 v015.6：≥2 行货 ⇒ **逐件配车**（每行按自己的尺寸/重量单独配车，混编车队）；动机：实测一条 25m 大梁曾把整票判成 0 辆。
+    # 🆕 热修 v015.8（P2-1）：1 行货在**带形态层数据**时也走逐件路径（fold_shape/inner_d_m/split_n/shape_class/
+    #   折叠词 `shape` 行级键，或顶层给形态/内径）—— 形态折算只在逐件路径上；其余 1 行走整票路径，
+    #   该路径已同步 T3/T5 尺寸闸 + `unassigned` 恒有键（单行口径与逐件路径不许分叉）。
+    _planner = pl.plan_fleet_by_item if len(items) >= 2 else pl.plan_fleet
+
+    def _row_has_fold_data(it) -> bool:
+        if not isinstance(it, dict):
+            return False
+        for k in ("inner_d_m", "split_n", "shape_class"):
+            if it.get(k) not in (None, ""):
+                return True
+        # 行级 `fold_shape`（权威折叠键）：**任何非空值**都过形态层 —— 合法值生效、非法值大声报错（422，不静默）
+        fs = it.get("fold_shape")
+        if fs is not None and str(fs).strip():
+            return True
+        # 旧式行级 `shape`：只在折叠词表（且非 auto）内才需要形态层
+        for k in ("shape", "form"):
+            v = pl._fold_vocab(it.get(k))
+            if v is not None and v.strip().lower() != "auto":
+                return True
+        return False
+
+    # 显式形态（integral|nK）、顶层内径、或行级形态数据一旦出现，1 行货也得过形态层 ⇒ 强制走逐件路径
+    if str(shape).strip().lower() not in ("", "auto") or top_inner_d is not None \
+            or any(_row_has_fold_data(it) for it in items):
+        _planner = pl.plan_fleet_by_item
+    # 🆕 v017 T-2：`locked_models` 是**逐行**约束（整票路径没有行概念）⇒ 非空时一律走逐件路径
+    if locked_models:
+        _planner = pl.plan_fleet_by_item
+    _common = dict(
         items=items,
         total_weight_kg=payload.get("weight_kg"),
         total_volume_m3=payload.get("volume_m3"),
         cargo_type=payload.get("cargo_type") or "normal",
         models=VEHICLE_MODELS,
         distance_km=payload.get("distance_km"),
+        allow_oversized=allow_oversized,          # 🆕 v016：开关透传（两条路径都要带）
     )
+    if _planner is pl.plan_fleet_by_item:
+        try:
+            plan = _planner(**_common, shape=shape or "auto", inner_d_m=top_inner_d,
+                            locked_models=locked_models or None,   # 🆕 v017：逐行锁定车型
+                            accepted_pairs=accepted_pairs)         # 🆕 v017：共车组合采纳
+        except ValueError as exc:
+            # 形态层护栏（非法 fold_shape / 内径口径）⇒ 明确报错（422 带原因），不把 500 吐给前端
+            raise HTTPException(422, str(exc)) from exc
+    else:
+        plan = _planner(**_common)
 
     def _group_out(g) -> dict:
         """分组响应组装：车型属性一次查表，避免在推导式里重复调 get_model()。"""
         m = get_model(g.model_id)
+        axles = [it.get("axle_lines") for it in g.items if it.get("axle_lines")]
+        # 🆕 v017：本组的逐行锁定回显（只有本组内**确实锁定**的行；键 = line_id 字符串口径）
+        locked = {it.get("line_id"): locked_models[it["line_id"]]
+                  for it in g.items if it.get("line_id") in locked_models}
         return {
             "model_id": g.model_id,
             "display_name": m.display_name if m else g.model_id,
             "category": m.category if m else "",
             "max_load_ton": m.max_load_ton if m else 0.0,
             "vehicle_count": g.vehicle_count,
+            "transport_units": g.vehicle_count,   # 🆕 T4：运输单元数（一次许可对一个单元；≠ 轴线条数）
             "reason": g.reason,          # v011：选车理由（前端车队行⑥直接显示）
             "items": g.items,
+            # 🆕 v015.8 T3/T4/T5：dim_flags（车辆匹配层）与 permit_flags（法规层）**分列**
+            "dim_flags": list(g.dim_flags),
+            "permit_flags": list(g.permit_flags),
+            "count_doctrine": dict(g.count_doctrine),
+            "axle_lines": max(axles, key=lambda a: a.get("lines_max") or 0) if axles else None,
+            # 🆕 v016：靠「允许超限运输配车」开关拿到的组（前端据此出常驻警示条 + 报价单文案）
+            "oversize_released": bool(getattr(g, "oversize_released", False)),
+            "pair_total_width_m": getattr(g, "pair_total_width_m", None),
+            # 🆕 v017 T-2：共车组合（前端④「拼车核对」面板逐条勾选用）+ 逐行锁定回显
+            "pairs": [dict(p) for p in (getattr(g, "pairs", None) or [])],
+            "locked": locked,
+            # 🆕 v023：本组的**四约束车辆数分解**（`{车数,重量,体积,长度,面积,主因,不可分}`）——
+            #   顶层 `vehicle_breakdowns` 是 `{model_id: ...}` 映射，同型号出现两组（main/oversized）
+            #   会互相覆盖，且 group 里拿不到「这份台计属于哪一组」。纯透传 `FleetGroup.breakdown`
+            #   （三处构造点均为 dict，见 fleet_planner :282/:1819/:2057），前端改读组内即无歧义。
+            #   ⚠️ 只读：`bd.车数` 是**四约束侧**的估算，权威车数是 `count_doctrine.caliber`
+            #   = `max(floor, 4const, packer)`，两者不等时以 count_doctrine 为准。
+            "breakdown": dict(g.breakdown),
         }
 
     result_groups = [_group_out(g) for g in plan.groups]
@@ -156,6 +309,74 @@ async def fit_vehicles(payload: dict) -> dict:
     if plan.split_hint:
         message += f"；{plan.split_hint}"
 
+    # 🆕 v016：「允许超限运输配车」每次 ON 必落一条审计（复用 audit_log.log_call，不新建文件）。
+    #   审计只记**决策与清单**，失败不影响配车（log_call 内部吞异常）。
+    policy = dict(oversize.get("policy") or {})
+    if allow_oversized:
+        from app.services import audit_log
+        audit_log.log_call(
+            tool="fleet_planner.allow_oversized", role="reference.fit-vehicles", ok=True,
+            args={"allow_oversized": True,
+                  "cargo_type": _common["cargo_type"],
+                  "distance_km": _common["distance_km"],
+                  "released": list(policy.get("released") or []),
+                  "hard_blocked": list(policy.get("hard_blocked") or []),
+                  "items": [{"name": i.get("name"), "count": i.get("count"),
+                             "L": i.get("length_m"), "W": i.get("width_m"), "H": i.get("height_m")}
+                            for i in items[:10]],
+                  "total_trucks": total},
+            note=("超限放行：只放宽超限（宽 >4.5m 且 ≤5.5m / 总高 >4.75m 且 ≤5.5m 降级为可运 + "
+                  "超限件可沿车长串联共车）；单件超核定载重、宽/总高 >5.5m、轴荷/桥涵一律不放行。"
+                  f"命中车型：{[g['model_id'] for g in result_groups]}"),
+        )
+        message += ("；⚠️ 已启用超限放行：本次配车含超限方案 —— 出车/导出报价单前请确认已（或将）"
+                    "办妥超限运输许可（本开关不放松「超载」）")
+
+    # 🆕 v017 T-2：确认回显 `confirm{}`（设计 §3.2）—— 前端⑤「确认车型与车数」两组小计 + 逐行
+    #   车型/锁定态 + `planSig` 的原料。**车数只搬运 plan.total_trucks 与组内行车数，不重算**。
+    line_model: dict[str, str] = {}
+    for g in result_groups:
+        for it in g["items"]:
+            lid = it.get("line_id")
+            if lid:
+                line_model[str(lid)] = g["model_id"]
+    one_item = 0
+    multi_item = 0
+    for g in result_groups:
+        for it in g["items"]:
+            n_i = int(it.get("vehicle_count") or 0)
+            cap = it.get("pieces_per_truck_max")
+            if cap is not None and int(cap) >= 2:
+                multi_item += n_i
+            else:
+                one_item += n_i
+    input_line_ids = [pl.line_id_of(raw, i) for i, raw in enumerate(items)]
+    confirm = {
+        "total_trucks": int(total),
+        "one_item_trucks": int(one_item),      # 一车一件（行级 pieces_per_truck_max = 1）
+        "multi_item_trucks": int(multi_item),  # 一车多件（行级上限 ≥ 2）
+        "lines": [{"line_id": lid, "model": line_model.get(lid),
+                   "locked": lid in locked_models} for lid in input_line_ids],
+        "plan_confirmed": plan_confirmed,      # 🆕 回显（不参与金额）
+    }
+
+    # 🆕 v017 T-2：`plan_confirmed=true` ⇒ 落一条审计（复用 audit_log.log_call，不新建文件；
+    #   只记**确认动作 + 配车结果**，不参与任何金额；log_call 内部吞异常，失败不影响配车）。
+    if plan_confirmed:
+        from app.services import audit_log
+        audit_log.log_call(
+            tool="fleet_planner.plan_confirmed", role="reference.fit-vehicles", ok=True,
+            args={"total_trucks": int(total),
+                  "one_item_trucks": int(one_item), "multi_item_trucks": int(multi_item),
+                  "locked_models": dict(locked_models),
+                  "accepted_pairs": (list(accepted_pairs) if isinstance(accepted_pairs, (list, tuple))
+                                     else dict(accepted_pairs or {})),
+                  "lines": confirm["lines"],
+                  "models": [g["model_id"] for g in result_groups]},
+            note=("已确认车型与车数：本票配车结果如下（该确认只用于记录/追溯，不参与任何金额计算）；"
+                  f"共 {int(total)} 辆（一车一件 {int(one_item)} / 一车多件 {int(multi_item)}）"),
+        )
+
     return {
         "recommended": recommended,
         "groups": result_groups,
@@ -169,8 +390,15 @@ async def fit_vehicles(payload: dict) -> dict:
         "mixed": plan.mixed,                        # 组内是否多车型（自动路径恒为 False）
         "needs_split": plan.needs_split,            # 互斥/超限：建议拆单而非静默拼车
         "split_hint": plan.split_hint,
+        # 🆕 A6：可解体件的拆件建议（顶层：不属于任何一组，也不改配车结果）。
+        #   语义提醒：拆件通常不是「避开超限」，而是把三类（15 工作日 + 护送）降到一类（2 工作日）。
+        #   未标 divisible 或本就不超限 ⇒ None。
+        "divisibility": plan.divisibility,
         "engine": plan.engine,                      # 口径串 fleet_planner@v011
         "category_fallback": plan.category_fallback,
+        # ── 🆕 v017 T-2：确认回显（车数三口径与组内行车数同源；plan_confirmed 不参与金额）──
+        "confirm": confirm,
+        "plan_confirmed": plan_confirmed,           # 顶层回显（与 confirm.plan_confirmed 同值）
     }
 
 
@@ -241,11 +469,16 @@ async def get_border_fees_named(vehicle_count: int = 1, heavy_lift_tons: float =
     """返回自动口岸费明细（RMB 总额），标注哪些是派生项（按车/吨/柜/天自动）。供定价区预填。"""
     data = await calc_border_fees(vehicle_count=vehicle_count, heavy_lift_tons=heavy_lift_tons)
 
-    def _side(s):
+    def _side(side_key):
+        s = data[side_key]
+        scaling = VEHICLE_SCALING_ITEMS.get(side_key, set())
         return {
             "items": [
                 {"key": k, "name": BORDER_FEE_NAMES.get(k, k),
-                 "amount_rmb": v, "derived": k in DERIVED_BORDER_ITEMS}
+                 "amount_rmb": v, "derived": k in DERIVED_BORDER_ITEMS,
+                 # 🆕 v021：该行是否随「车次」×N（前端据此分组显示「可×车次 / 按量」，
+                 #   避免用户以为改车次吊装费也会变）
+                 "per_vehicle": k in scaling}
                 for k, v in s["items"].items()
             ],
             "subtotal_rmb": s["subtotal_rmb"],
@@ -253,8 +486,8 @@ async def get_border_fees_named(vehicle_count: int = 1, heavy_lift_tons: float =
 
     return {
         "vehicle_count": vehicle_count,
-        "china_side": _side(data["china_side"]),
-        "vietnam_side": _side(data["vietnam_side"]),
+        "china_side": _side("china_side"),
+        "vietnam_side": _side("vietnam_side"),
         "total_rmb": data["total_rmb"],
         "total_vnd": data["total_vnd"],
         "exchange_rate": data["exchange_rate"],

@@ -10,6 +10,8 @@
   - 排序用 cmp 语义复刻 JS comparator (functools.cmp_to_key), 不用简单 key (会改平局序)
   - 舍入用 js_round (Math.round 语义: 半值远离零), 不用 Python round (银行家舍入)
   - 朝向选择 = 首个能放下的朝向 (oriented_dims 顺序), 超限件平局取第一个
+    · v022: opts.orientation = {cargoId: 0|1} 可锁定单件朝向档位 (0 = {dx:l,dz:w}, 1 = {dx:w,dz:l});
+      默认不传 ⇒ 行为与以前逐字节一致 (与 vendor/packer.js 同契约, 改动须两侧同步)
   - 贪心游标 pack_zone 的推进顺序/边界 epsilon 1e-6 原样保留
 """
 from __future__ import annotations
@@ -55,6 +57,21 @@ def pack(
     H = float(truck["H"])
     allow_overflow = bool(opts.get("allowOverflow")) if opts else (truck.get("type") == "flatbed")
     strategy = (opts or {}).get("strategy") or "balanced"
+    # v022: 朝向锁定表 —— {cargoId: 0|1}, 0 = {dx:l, dz:w}, 1 = {dx:w, dz:l} (水平换向, dy 恒为 h)
+    # 语义: 该件只许用指定档位参与落位; 锁的档位装不下 ⇒ 与「两档都装不下」同样处理 (超限/未装)。
+    # 默认不传 ⇒ 两档候选、顺序不变 ⇒ 与改动前逐字节一致 (向后兼容, 同 JS 侧 opts.orientation)
+    orient_lock = (opts or {}).get("orientation") or (opts or {}).get("orientLock") or {}
+
+    def _locked_orientation(item: Dict[str, Any]) -> Optional[int]:
+        if not orient_lock:
+            return None
+        cid = item.get("cargoId")
+        k = orient_lock.get(cid, orient_lock.get(str(cid)))
+        try:
+            k = int(k)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+        return k if k in (0, 1) else None
 
     placements: List[Dict[str, Any]] = []
     unplaced: List[Dict[str, Any]] = []
@@ -84,10 +101,12 @@ def pack(
         instances.sort(key=cmp_to_key(_cmp_balanced))
 
     def oriented_dims(item: Dict[str, Any]) -> List[Dict[str, float]]:
-        return [
+        dims = [
             {"dx": item["l"], "dy": item["h"], "dz": item["w"]},
             {"dx": item["w"], "dy": item["h"], "dz": item["l"]},
         ]
+        k = _locked_orientation(item)
+        return dims if k is None else [dims[k]]
 
     def too_big(item: Dict[str, Any]) -> bool:
         for d in oriented_dims(item):

@@ -1,6 +1,6 @@
 {
   "_description": "玖能国际 DDP 全链路固定费用参数表 — 中国端/越南端分开报价",
-  "_updated": "2026-09-20",
+  "_updated": "2026-09-29",
   "_currency": "RMB (人民币)",
   "china_side": {
     "_description": "中国端费用 — 从中国工厂到友谊关口岸",

@@ -11,6 +11,7 @@ Photon/Nominatim 实例。
 
 import asyncio
 import json
+import re
 import time
 from dataclasses import dataclass
 
@@ -170,6 +171,111 @@ _LOCAL_COORDS: list[tuple[list[str], float, float, str, str]] = [
 ]
 
 
+# ── 坐标本地解析（v015.3）─────────────────────────────────────────────
+# 背景：本模块原先只会「本地地名表 → 公共 Nominatim」，**没有坐标解析**。用户把
+#   `21°08'18.7"N 104°46'45.8"E` 填进目的地：坐标串既不在地名表、也不是地名 ⇒ 漏到公共
+#   Nominatim；本机 DNS 解析不了 nominatim.openstreetmap.org ⇒ 502 getaddrinfo failed
+#   ⇒ 前端报「无法解析〈目的地〉的坐标」= 用户说的「系统识别不出来」。
+# 契约：坐标一律**本地解析**（DMS / 十进制 / 半球字母 / 中文经纬度 / 顺序颠倒），零网络。
+_FULLWIDTH = str.maketrans({
+    "，": ",", "、": ",", "；": ";", "：": ":", "（": " ", "）": " ", "　": " ",
+    "’": "'", "‘": "'", "′": "'", "＇": "'", "”": '"', "“": '"', "″": '"', "＂": '"',
+})
+_HEMI_WORDS = (("北纬", "N "), ("南纬", "S "), ("东经", "E "), ("西经", "W "),
+               ("北緯", "N "), ("南緯", "S "), ("東經", "E "), ("西經", "W "))
+# 单个坐标分量：可选前置半球字母 + 度 + 可选分/秒（符号或汉字）+ 可选后置半球字母
+_COMP_RE = re.compile(
+    r"(?P<h1>[NSEW])?\s*(?P<d>-?\d{1,3}(?:\.\d+)?)\s*(?:[°度]\s*)?"
+    r"(?:(?P<m>\d{1,3}(?:\.\d+)?)\s*(?:['分]\s*))?"
+    r"(?:(?P<s>\d{1,3}(?:\.\d+)?)\s*(?:[\u0022秒]\s*))?\s*(?P<h2>[NSEW])?",
+    re.I,
+)
+# 全空格 DMS 三元组对：`21 08 18.7 N 104 46 45.8 E`
+_DMS_SPACE_RE = re.compile(
+    r"^\s*(-?\d{1,3}(?:\.\d+)?)\s+(\d{1,3}(?:\.\d+)?)\s+(\d{1,3}(?:\.\d+)?)\s*([NSEW])?"
+    r"\s+(-?\d{1,3}(?:\.\d+)?)\s+(\d{1,3}(?:\.\d+)?)\s+(\d{1,3}(?:\.\d+)?)\s*([NSEW])?\s*$",
+    re.I,
+)
+_NUM_ONLY_RE = re.compile(r"-?\d{1,3}(?:\.\d+)?")
+_COORD_TEXT_RE = re.compile(r"[°'\"分秒]|[NSEW]", re.I)
+
+
+def _norm_coord_text(s: str) -> str:
+    """归一化：全角→半角、中文经纬度/度分秒→符号写法。"""
+    t = (s or "").translate(_FULLWIDTH)
+    for w, r in _HEMI_WORDS:
+        t = t.replace(w, r)
+    return t.replace("度", "°").replace("分", "'").replace("秒", '"')
+
+
+def _dms_value(d, m, s, hemi) -> float:
+    v = abs(float(d or 0)) + float(m or 0) / 60.0 + float(s or 0) / 3600.0
+    h = (hemi or "").upper()
+    return -v if h in ("S", "W") else v
+
+
+def _assign_axes(c1: tuple, c2: tuple) -> tuple[float, float]:
+    """按半球字母定轴；没有字母时按数值判轴（>90 必为经度）；否则默认「纬度在前」。"""
+    v1, h1 = c1
+    v2, h2 = c2
+    a1 = "lat" if h1 in ("N", "S") else ("lng" if h1 in ("E", "W") else None)
+    a2 = "lat" if h2 in ("N", "S") else ("lng" if h2 in ("E", "W") else None)
+    if a1 == "lat" or a2 == "lng":
+        return v1, v2
+    if a1 == "lng" or a2 == "lat":
+        return v2, v1
+    if abs(v1) > 90 and abs(v2) <= 90:
+        return v2, v1
+    return v1, v2
+
+
+def parse_coordinates(query: str) -> "GeocodeResult | None":
+    """把坐标串解析成 GeocodeResult（DMS/十进制/半球字母/中文经纬度/顺序颠倒）；非坐标 → None。"""
+    t = _norm_coord_text(query)
+    if not t.strip():
+        return None
+    lat = lng = None
+
+    m3 = _DMS_SPACE_RE.match(t.strip())
+    if m3:
+        lat = _dms_value(m3.group(1), m3.group(2), m3.group(3), m3.group(4))
+        lng = _dms_value(m3.group(5), m3.group(6), m3.group(7), m3.group(8))
+
+    if lat is None and _COORD_TEXT_RE.search(t):
+        comps: list[tuple[float, str]] = []
+        for m in _COMP_RE.finditer(t):
+            raw = m.group(0)
+            strong = ("°" in raw) or ("'" in raw) or ('"' in raw) or bool(m.group("h1") or m.group("h2"))
+            if not strong:
+                continue
+            comps.append((_dms_value(m.group("d"), m.group("m"), m.group("s"), m.group("h1") or m.group("h2")), (m.group("h1") or m.group("h2") or "").upper()))
+            if len(comps) == 2:
+                break
+        if len(comps) == 2:
+            lat, lng = _assign_axes(comps[0], comps[1])
+
+    if lat is None:                       # 裸十进制对：整串只剩两个数字（+分隔符）
+        toks = [x for x in re.split(r"[\s,;:]+", t.strip()) if x]
+        if len(toks) == 2 and all(_NUM_ONLY_RE.fullmatch(x) for x in toks):
+            a, b = float(toks[0]), float(toks[1])
+            if abs(a) > 90 and abs(b) <= 90:
+                a, b = b, a
+            lat, lng = a, b
+
+    if lat is None:
+        return None
+    ok = lambda la, ln: -90 <= la <= 90 and -180 <= ln <= 180   # noqa: E731
+    if not ok(lat, lng):
+        if ok(lng, lat):
+            lat, lng = lng, lat
+        else:
+            return None
+    lat_r, lng_r = round(lat, 6), round(lng, 6)
+    return GeocodeResult(lat=lat_r, lng=lng_r,
+                         display_name="坐标点 %.6f, %.6f" % (lat_r, lng_r),
+                         country=bbox_country(lat_r, lng_r))
+
+
 def _local_lookup(query: str) -> list[GeocodeResult]:
     """按别名子串匹配本地坐标表；命中返回该坐标，未命中返回空。"""
     q = (query or "").strip().lower()
@@ -186,6 +292,11 @@ async def search_address(query: str, limit: int = 5) -> list[GeocodeResult]:
     """异步地址搜索，带 24h TTL 缓存。"""
     if not query.strip():
         return []
+
+    # 🆕 v015.3：坐标优先**本地解析**（DMS/十进制/中文经纬度…），零网络、不进缓存
+    coord_hit = parse_coordinates(query)
+    if coord_hit:
+        return [coord_hit]
 
     cache_key = _make_cache_key(query, limit)
     now = time.time()

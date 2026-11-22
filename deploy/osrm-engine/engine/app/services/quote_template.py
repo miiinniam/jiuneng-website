@@ -28,7 +28,11 @@ from docx.shared import Cm, Pt
 
 from app.services._paths import data_dir, resource_dir
 # 复用共用的金额格式化与中文大写（v010 起两版式共用 quote_format，避免循环导入）
-from app.services.quote_format import _fmt_vnd, _vnd_uppercase
+from app.services.quote_format import (  # noqa: E402
+    _fmt_vnd, _vnd_uppercase, border_fee_scope, border_fees_included_of,
+    # 🆕 v024 T3：普货口径句的唯一定义处（本文件只印、不拼；中越两句都在那边）
+    estimate_basis_of, estimate_basis_vi_of, estimate_notes_vi_of,
+)
 
 DEFAULT_RATE = 3891.05          # VND per 1 RMB —— 取不到实时汇率时的兜底（与 data/exchange_rate.json 一致）
 
@@ -170,11 +174,15 @@ def _rmb(vnd: float, rate: float) -> float:
 
 
 def fee_totals(payload, rate: float) -> dict:
-    """客户版三行口径 + 内部版补充口径，全部 VND。"""
+    """客户版三行口径 + 内部版补充口径，全部 VND。
+
+    🆕 v023：口岸费口径走唯一真源 `border_fee_scope()` —— `none`（含「仅一端都不含」）时
+      `border_vnd = 0`，**不许**因为 `border_fees` 对象还在就把金额算进总计（fail-open 的另一面）。
+    """
     transport = float(getattr(payload, "price_vnd", 0) or 0)
     bf = getattr(payload, "border_fees", None)
     border_vnd = 0.0
-    if bf is not None:
+    if border_fee_scope(payload) != "none":
         border_vnd = float(getattr(bf, "total_vnd", 0) or 0)
         if not border_vnd:
             border_vnd = float(getattr(bf, "total_rmb", 0) or 0) * rate
@@ -261,21 +269,29 @@ def _add_fee_summary(doc, payload, rate: float, *, role: str) -> None:
     """
     t = fee_totals(payload, rate)
     manual = float(getattr(payload, "manual_oversize_fee_vnd", 0) or 0)
+    # 🆕 v022 T4：关掉「进出口费用」开关 ⇒ 不出「进出口口岸费」行（以及它的 0 占位），
+    #   费用表降为两行（运输服务费 / 总计），总计 = 运输服务费。
+    # 🆕 v023（② 两端开关）：判定走唯一真源 `border_fee_scope(payload)` —— 四态下**只要任一端在就出这一行**，
+    #   行金额 = **未关一端**的合计（由响应体 `border_fees.total_vnd` 给出，见 route._trim_border_fees）。
+    #   ⚠️ 双语版式刻意保持**一行汇总**（不出「中国段/越南段」两行），与门禁 R3 判据一致；
+    #      两端具名是靠下面「其他约定第 1 条」的 4 态措辞（含双语第三种措辞）。
+    scope = border_fee_scope(payload)
     _para(doc, _bi("费用明细", "Chi tiết chi phí"), size=11, bold=True, cn="黑体")
-    tab = doc.add_table(rows=2 + 3, cols=3)
+    rows = [
+        (_bi("运输服务费（门到门）" if not manual else "大件/超限运输专线价（手工录入）",
+             "Phí vận tải (door-to-door)" if not manual else "Phí vận tải tuyến hàng quá khổ (nhập tay)"),
+         t["transport_vnd"], False),
+    ]
+    if scope != "none":
+        rows.append((_bi("进出口口岸费", "Phí cửa khẩu xuất nhập khẩu"), t["border_vnd"], False))
+    rows.append((_bi("总计", "Tổng cộng"), t["total_vnd"], True))
+    tab = doc.add_table(rows=2 + len(rows), cols=3)
     tab.style = "Table Grid"
     heads = [_bi("费用项目", "Khoản mục"), _bi("金额（VND）", "Số tiền (VND)"),
              _bi("金额（RMB）", "Số tiền (RMB)")]
     for j, h in enumerate(heads):
         _shade(tab.cell(0, j), "EDEDED")
         _cell_text(tab.cell(0, j), h, size=10, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
-    rows = [
-        (_bi("运输服务费（门到门）" if not manual else "大件/超限运输专线价（手工录入）",
-             "Phí vận tải (door-to-door)" if not manual else "Phí vận tải tuyến hàng quá khổ (nhập tay)"),
-         t["transport_vnd"], False),
-        (_bi("进出口口岸费", "Phí cửa khẩu xuất nhập khẩu"), t["border_vnd"], False),
-        (_bi("总计", "Tổng cộng"), t["total_vnd"], True),
-    ]
     for i, (name, vnd, bold) in enumerate(rows, start=1):
         _cell_text(tab.cell(i, 0), name, size=10, bold=bold)
         _cell_text(tab.cell(i, 1), _fmt_vnd(vnd), size=10, bold=bold, align=WD_ALIGN_PARAGRAPH.RIGHT)
@@ -292,6 +308,24 @@ def _add_fee_summary(doc, payload, rate: float, *, role: str) -> None:
     # 大件/超限：把手写说明原样带上（对客户解释为什么不是常规价）
     if manual > 0 and str(getattr(payload, "oversize_note", "") or "").strip():
         _para(doc, str(payload.oversize_note).strip(), size=9, space_after=8)
+    # 🆕 v024 T3：普货口径（`estimate_mode="general_cargo"`）**必须印在费用表紧下方**，
+    #   让客户看到的这一串金额自带口径 —— 否则「按公里费率估的价」会被当成称重算的价读。
+    #   ⚠️ 文案取自**唯一定义处**（`quote_format.estimate_basis_of`，与 `/route/cost` 响应里的
+    #   `estimate_basis` 是同一字符串），渲染器不许自己拼；缺项（如未提供重量 ⇒ 吊装费未计）
+    #   必须一并写明，不许静默少一项让人以为已经含在内。
+    #   与上方 `oversize_note` 同一先例：**payload 给的说明按原文单语印出**（不在这里另做翻译，
+    #   翻译即第二次定义，两处必然漂移）。
+    if str(getattr(payload, "estimate_mode", "normal")) == "general_cargo":
+        _basis = (getattr(payload, "estimate_basis", "") or "").strip() or (estimate_basis_of("general_cargo") or "")
+        _extras = [str(x).strip() for x in (getattr(payload, "estimate_notes", None) or []) if str(x).strip()]
+        _gc_lines = [x for x in ([_basis] + _extras) if x]
+        _vi_lines = [x for x in ([estimate_basis_vi_of("general_cargo")]
+                                 + estimate_notes_vi_of(getattr(payload, "estimate_notes", None))) if x]
+        if _gc_lines:
+            # 中文句在前，越文句**紧邻下方**（同一段口径的两种语言，不能分开到两个栏目里去）
+            _para(doc, f"计价口径：{'；'.join(_gc_lines)}。", size=9, space_after=2 if _vi_lines else 8)
+        if _vi_lines:
+            _para(doc, f"Căn cứ tính giá: {'; '.join(_vi_lines)}.", size=9, space_after=8)
 
     if role == "internal":
         _para(doc, _bi("【内部版】成本与利润", "[Nội bộ] Chi phí và lợi nhuận"), size=11, bold=True, cn="黑体")
@@ -353,10 +387,37 @@ def _add_payment_block(doc, profile) -> None:
 
 def _add_terms(doc, payload) -> None:
     _para(doc, _bi("其他约定", "Các thỏa thuận khác"), size=11, bold=True, cn="黑体")
-    terms = [
-        _bi("1. 本报价为门到门全程运输，含上述运输费与进出口口岸费，不含关税、增值税及海关查验产生的仓储费用。",
+    # 🆕 v022 T4（③ 建议=留）：开关关闭时第 1 条必须同步改口，否则「已含口岸费」与表里没有口岸费行自相矛盾。
+    # 🆕 v023（② 两端开关）：扩到 **4 态**，其中 `export_only` / `import_only` 是**第三种/第四种措辞**
+    #   （现有两种措辞都不覆盖「仅一端」）—— 中文必须**具名**含哪端/未含哪端，越南文那半句同步改口为
+    #   `chưa gồm phí cửa khẩu phía ...`（越文否定词是两个词 `chưa gồm`，门禁判据不许删空格后匹配）。
+    scope = border_fee_scope(payload)
+    if scope == "export_only":
+        term1 = _bi(
+            "1. 本报价为门到门全程运输，含上述运输费及中国段进出口口岸费，未含越南段口岸费、"
+            "关税、增值税及海关查验产生的仓储费用。",
+            "1. Báo giá theo hình thức vận tải door-to-door, đã gồm phí vận tải và phí cửa khẩu phía "
+            "Trung Quốc; chưa gồm phí cửa khẩu phía Việt Nam, thuế nhập khẩu, VAT và phí lưu kho "
+            "phát sinh khi kiểm hóa.")
+    elif scope == "import_only":
+        term1 = _bi(
+            "1. 本报价为门到门全程运输，含上述运输费及越南段进出口口岸费，未含中国段报关、货场等"
+            "口岸费用、关税、增值税及海关查验产生的仓储费用。",
+            "1. Báo giá theo hình thức vận tải door-to-door, đã gồm phí vận tải và phí cửa khẩu phía "
+            "Việt Nam; chưa gồm phí cửa khẩu phía Trung Quốc (khai báo hải quan, bãi hàng), thuế nhập "
+            "khẩu, VAT và phí lưu kho phát sinh khi kiểm hóa.")
+    elif scope == "none":
+        term1 = _bi(
+            "1. 本报价为门到门全程运输，仅含上述运输费，不含进出口口岸费、关税、增值税及海关查验产生的仓储费用。",
+            "1. Báo giá theo hình thức vận tải door-to-door, chỉ gồm phí vận tải nêu trên, "
+            "chưa gồm phí cửa khẩu, thuế nhập khẩu, VAT và phí lưu kho phát sinh khi kiểm hóa.")
+    else:
+        term1 = _bi(
+            "1. 本报价为门到门全程运输，含上述运输费与进出口口岸费，不含关税、增值税及海关查验产生的仓储费用。",
             "1. Báo giá theo hình thức vận tải door-to-door, đã gồm phí vận tải và phí cửa khẩu nêu trên; "
-            "chưa gồm thuế nhập khẩu, VAT và phí lưu kho phát sinh khi kiểm hóa."),
+            "chưa gồm thuế nhập khẩu, VAT và phí lưu kho phát sinh khi kiểm hóa.")
+    terms = [
+        term1,
         _bi("2. 报价有效期见上表；超期需重新确认运价。",
             "2. Hiệu lực báo giá theo bảng trên; quá hạn vui lòng xác nhận lại giá."),
         _bi("3. 货物重量/尺寸以装车时实际测量为准，若与申报不符，运价按实际重算。",

@@ -44,6 +44,26 @@ class VehicleModel:
     #   TR-02 2轴载货 / TR-0N-R 载货 / TR-0N-A 铰接列车 / TR-0N-C 中置轴挂车列车 / TR-0N-F 全挂汽车列车
     #   用途：3D 装车视图按标准车型画轴数、轴荷与超限判定同源；值由 scripts/_v015_add_axle_config.py 生成
     axle_config: str | None = None
+    # 🆕 2026-09-29（v015.8 T6）：大件配车字段（专家 §3.3 字段缺口表）——全部带默认值，旧构造方式不受影响
+    #   deck_height_m 台面高：总高 = 台面高 + 货高 + 垫木（0.12–0.15），大件的命门（§4.2b）
+    deck_height_m: float | None = None
+    axle_lines: int | None = None                # 轴线数（模块车拼轴 / 轴·天计价 / 桥涵验算）
+    axle_load_per_line_t: float | None = None    # 单轴线轴荷上限（吨；公路口径 8–10 t/轴）
+    deck_width_extendable_m: float | None = None # 侧伸后车宽（如 3.0 → 4.4 m）；不可侧伸留白
+    couplable: bool | None = None                # 可否拼轴（模块车组合能力）
+    min_turn_radius_m: float | None = None       # 最小转弯半径（进山路线可行性）
+    rate_model: str | None = None                # 费率口径：per_km | per_trip | per_axle_day
+    # 🆕 2026-09-29（v016 T-B）：越南 TT12/2025 Điều 15 与超载闸的 4 个数据底座字段 ——
+    #   全部带默认值且**可空**（旧构造方式不受影响；留白是正常状态，不是错误）
+    #   axle_count 轴数：列车总轴数（Điều 15 整车总质量表按轴数分档 / 中国《认定标准》轴数映射）；
+    #     留白 ⇒ 调用方回落到 `axle_config` 的 `TR-0N` 数字
+    axle_count: int | None = None
+    #   wheelbase_m 首末轴中心距（m）：Điều 15「轴距每短 1m 减 2t」的输入（≤7 / >7m 分档）
+    wheelbase_m: float | None = None
+    #   saddle_to_first_axle_m 牵引销中心 → 半挂第一轴中心（m）：3.2–4.5 / 4.5–6.5 / >6.5m 分档
+    saddle_to_first_axle_m: float | None = None
+    #   registered_payload_ton **核定载质量（t）= 超载闸唯一真源**；留白 ⇒ 调用方回落 `max_load_ton`
+    registered_payload_ton: float | None = None
 
     @property
     def floor_area_m2(self) -> float | None:
@@ -90,6 +110,64 @@ def _parse_float(value: str) -> float | None:
     return float(value) if value else None
 
 
+def _parse_int(value: str) -> int | None:
+    value = (value or "").strip()
+    return int(float(value)) if value else None
+
+
+#: 费率口径合法集（专家 §3.3 / §5.1：常规件 per_km；大件 per_trip（含底价）；模块车 per_trip + per_axle_day）
+RATE_MODELS: tuple[str, ...] = ("per_km", "per_trip", "per_axle_day")
+
+_COUPLABLE_TRUE = frozenset({"1", "yes", "y", "true"})
+_COUPLABLE_FALSE = frozenset({"0", "no", "n", "false"})
+
+
+def _parse_couplable(raw: str | None):
+    """`couplable`（可否拼轴）：yes/no → True/False，留白 → None。
+
+    未识别的值**原样返回**（不在这里抛异常），由 `_validate()` 统一报错 —— 与 axle_config 同一套路。
+    """
+    v = (raw or "").strip().lower()
+    if not v:
+        return None
+    if v in _COUPLABLE_TRUE:
+        return True
+    if v in _COUPLABLE_FALSE:
+        return False
+    return v
+
+
+def _parse_rate_model(raw: str | None) -> str | None:
+    """`rate_model`（费率口径）：统一小写；留白 → None；非法值原样返回，由 `_validate()` 报错。"""
+    return (raw or "").strip().lower() or None
+
+
+def _parse_optional_float(raw: str | None):
+    """v016 T-B 的可空数值列（`wheelbase_m` / `saddle_to_first_axle_m` / `registered_payload_ton`）。
+
+    * **留白（空/空白/缺列）→ `None`**：这 4 列是可空列，「没有数据」是正常状态，绝不是错误
+      （旧格式 CSV 没有这些列，`.get()` 给 `None` 也必须能读）；
+    * 数字 → `float`；
+    * 坏值 → **原样返回字符串**，交给 `_validate()` 统一报错（与 `_parse_couplable` /
+      `_parse_axle_config` 同一套路：解析层不抛难以定位的异常，报错文案要点名车型 + 列 + 原值）。
+    """
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return text
+
+
+def _parse_optional_int(raw: str | None):
+    """`axle_count`：留白 → `None`；整数 → `int`；非整数（如 `6.5`）或坏值 → 原样返回，由 `_validate()` 报错。"""
+    value = _parse_optional_float(raw)
+    if value is None or isinstance(value, str):
+        return value
+    return int(value) if float(value).is_integer() else (raw or "").strip()
+
+
 def _validate(models: list["VehicleModel"]) -> None:
     seen_ids: set[str] = set()
     categories_present: set[str] = set()
@@ -108,6 +186,34 @@ def _validate(models: list["VehicleModel"]) -> None:
                 f"车型「{m.model_id}」的 axle_config「{m.axle_config}」格式非法："
                 f"应为 TR-02 或 TR-0N-X（X ∈ C 中置轴 / A 铰接 / R 载货 / F 全挂）"
             )
+        # 🆕 2026-09-29（v015.8 T6）：rate_model / couplable 校验（空值允许留白）
+        if m.rate_model and m.rate_model not in RATE_MODELS:
+            raise VehicleRegistryError(
+                f"车型「{m.model_id}」的 rate_model「{m.rate_model}」非法："
+                f"应为 {' / '.join(RATE_MODELS)}（可留白）"
+            )
+        if m.couplable is not None and not isinstance(m.couplable, bool):
+            raise VehicleRegistryError(
+                f"车型「{m.model_id}」的 couplable「{m.couplable}」非法：应为 yes / no（可留白）"
+            )
+        # 🆕 2026-09-29（v016 T-B）：4 个新列的**容错**校验 ——
+        #   留白（`None`）永远是合法状态（planner 各自回落：axle_count → axle_config 的 TR-0N；
+        #   registered_payload_ton → max_load_ton；轴距留白 ⇒ 只按中国口径算并标注「越侧待补轴距」），
+        #   只有「填了但填坏 / 填成非正数」才报错，且必须点名车型 + 列 + 原值。
+        for column, value in (("axle_count", m.axle_count),
+                              ("wheelbase_m", m.wheelbase_m),
+                              ("saddle_to_first_axle_m", m.saddle_to_first_axle_m),
+                              ("registered_payload_ton", m.registered_payload_ton)):
+            if value is None:
+                continue                              # ✅ 留白合法 —— 绝不因空值报错
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise VehicleRegistryError(
+                    f"车型「{m.model_id}」的 {column}「{value}」非法：应为正数或留白"
+                )
+            if value != value or value in (float("inf"), float("-inf")) or value <= 0:
+                raise VehicleRegistryError(
+                    f"车型「{m.model_id}」的 {column} 必须 > 0（或留白）：{value}"
+                )
 
     missing_categories = set(VEHICLE_CATEGORIES) - categories_present
     if missing_categories:
@@ -175,6 +281,19 @@ def _load_registry(csv_path: Path) -> list[VehicleModel]:
                     ),
                     notes=row["notes"].strip(),
                     axle_config=_parse_axle_config(row.get("axle_config")),
+                    # 🆕 2026-09-29（v015.8 T6）：大件配车 7 列（`.get` 保证旧格式 CSV 也能读）
+                    deck_height_m=_parse_float(row.get("deck_height_m")),
+                    axle_lines=_parse_int(row.get("axle_lines")),
+                    axle_load_per_line_t=_parse_float(row.get("axle_load_per_line_t")),
+                    deck_width_extendable_m=_parse_float(row.get("deck_width_extendable_m")),
+                    couplable=_parse_couplable(row.get("couplable")),
+                    min_turn_radius_m=_parse_float(row.get("min_turn_radius_m")),
+                    rate_model=_parse_rate_model(row.get("rate_model")),
+                    # 🆕 2026-09-29（v016 T-B）：4 个新列（`.get` 保证 27 列旧格式 CSV 也能读）
+                    axle_count=_parse_optional_int(row.get("axle_count")),
+                    wheelbase_m=_parse_optional_float(row.get("wheelbase_m")),
+                    saddle_to_first_axle_m=_parse_optional_float(row.get("saddle_to_first_axle_m")),
+                    registered_payload_ton=_parse_optional_float(row.get("registered_payload_ton")),
                 )
             )
     _validate(models)
@@ -222,7 +341,8 @@ def get_model(model_id: str) -> VehicleModel | None:
 def profile_for_model(model_id: str | None) -> str | None:
     """🆕 v015.4：车型 → OSRM profile（车辆型号库.csv 的 `osrm_profile` 列，如 truck / driving）。
 
-    这是「地图路线按车型」的**唯一取值口**：型号库里 31 款车声明 truck、3 个小厢货声明 driving。
+    这是「地图路线按车型」的**唯一取值口**：型号库里 39 款车声明 truck、3 个小厢货声明 driving
+    （v015.8 起共 42 款）。
     未指定车型 / 车型库里没有该 model_id / 该列为空 → 返回 None，
     调用方（api/route.py）据此走全局默认 profile（保持 v015.4 之前的零回归行为）。
     """

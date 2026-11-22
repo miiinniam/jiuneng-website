@@ -45,7 +45,11 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"  # DeepSeek V4 Flash（官方 API 模型名）
-    deepseek_max_tokens: int = 4096
+    # 🆕 2026-09-28：4096 → 16384。deepseek-v4-flash 是推理模型，推理 token 计入 max_tokens；
+    #    本机 prompt ≈4,078 token（工具 schema + 系统提示）+ 推理 1,700–2,200 token ⇒ 4096 会
+    #    间歇性「烧穿预算、正文为空」。实测该 API 接受 16384（HTTP 200，finish=tool_calls）。
+    #    注意：max_tokens 只是上限，按实际用量计费，不会因为调大而多花钱。
+    deepseek_max_tokens: int = 16384
     deepseek_temperature: float = 0.0      # 分析任务用 0 保证一致性
     deepseek_chat_temperature: float = 0.3  # 对话聊天用稍高的温度
 

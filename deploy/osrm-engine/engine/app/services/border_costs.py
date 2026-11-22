@@ -44,7 +44,7 @@ _HS_TARIFF: list[dict] = _safe_load_json("hs_tariff_2026.json", [])
 # 深度合并后：用户改过的值保留，缺的键自动用内置默认补齐。
 _FIXED_FEES_DEFAULTS: dict = {
     "china_side": {"customs_declaration_per_vehicle": 1500, "yard_fee_per_vehicle": 300, "unloading_fee_per_vehicle": 800, "transloading_fee_per_vehicle": 1000},
-    "vietnam_side": {"customs_clearance_per_vehicle": 2500, "yard_fee_per_vehicle": 800, "inspection_fee_per_container": 370, "detention": {"rate_day1_3_vnd": 3000000, "rate_day4_plus_vnd": 4000000}, "heavy_lift": {"tier_under_5t_per_ton": 500, "tier_5t_20t_per_ton": 800}},
+    "vietnam_side": {"customs_clearance_per_vehicle": 2500, "yard_fee_per_vehicle": 800, "inspection_fee_per_container": 370, "detention": {"rate_day1_3_vnd": 3000000, "rate_day4_plus_vnd": 4000000}, "heavy_lift": {"tier_under_5t_per_ton": 500, "tier_5t_20t_per_ton": 800, "tier_over_20t_per_ton": 1000}},
     "container": {}, "breakbulk": {"port_charge_per_ton": 26, "customs_clearance_per_ton": 10},
     "tax_defaults": {"vat_rate_vn": 0.08, "export_tax_rebate_cn_typical": 0.08, "import_duty_fallback_pct": 0.05},
     "exchange_rate": {"vnd_per_rmb": 3500},
