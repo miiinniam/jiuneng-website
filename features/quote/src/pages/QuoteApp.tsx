@@ -161,6 +161,15 @@ export default function QuoteApp({ scope }: { scope: QuoteScope }) {
   /** AI 解析出路线后是否要自动算一次（见 pickRoute / 自动测算 effect） */
   const autoQuote = useRef(false);
 
+  /* ── 预热测算引擎 ─────────────────────────────────────────
+     引擎在 Render 免费层，15 分钟无请求即休眠，唤醒约 40 秒。用户点「测算」时才去叫它，
+     那 40 秒就白等了；这里在页面挂载时空跑一发 /api/health?deep=1（免鉴权，deep=1 会真实
+     探测引擎），把冷启动藏进用户填表的时间窗口。
+     失败静默：预热是体验优化，不该让页面因为引擎没醒而报错。 */
+  useEffect(() => {
+    fetch('/api/health?deep=1', { cache: 'no-store' }).catch(() => { /* 预热失败不影响页面 */ });
+  }, []);
+
   /* ── 参考数据（车型库 / 货物类型 / 油价） ─────────────────── */
   useEffect(() => {
     let alive = true;

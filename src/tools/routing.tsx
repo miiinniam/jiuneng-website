@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { mountPage } from '../shell/mount';
 import '../styles/tools.css';
 import RoutingForm from './RoutingForm';
@@ -6,9 +7,25 @@ import { ToolHeader } from './parts';
 import { getTools } from '../content';
 import { useLang } from '../shell/LangProvider';
 
+/**
+ * 预热测算引擎。
+ *
+ * 引擎跑在 Render 免费层，15 分钟无请求就休眠，唤醒要 40 秒左右——用户点「测算」
+ * 时才去叫它，那 40 秒就白等了。这里在页面挂载时先打一发 `/api/health?deep=1`
+ * （免鉴权，`deep=1` 会真实探测引擎），把冷启动藏在用户填表的时间窗口里。
+ *
+ * 单飞：同一页面只发一次；失败静默——预热是体验优化，不能因为引擎没醒就让页面报错。
+ */
+function useEngineWarmup() {
+  useEffect(() => {
+    fetch('/api/health?deep=1', { cache: 'no-store' }).catch(() => { /* 预热失败不影响页面 */ });
+  }, []);
+}
+
 function Routing() {
   const { lang } = useLang();
   const t = getTools(lang);
+  useEngineWarmup();
   return (
     <>
       <ToolHeader
