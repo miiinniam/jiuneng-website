@@ -1,0 +1,341 @@
+{
+  "head": "f1b16c8a41171b8d6c04e0f613b1539bb1095bb3",
+  "files": {
+    "server/agentChat.ts": {
+      "exists": true,
+      "sha256": "5312b9624e3e47f14fef9dec13aaa2e6f602e82a8304ec0fe9a4023f2a47d915",
+      "bytes": 38683,
+      "lines": 739
+    },
+    "server/osrmQuote.ts": {
+      "exists": true,
+      "sha256": "06a10e4551a6d54550b4aa527bdcc18fb389b756978b2d45a5b48eac350f4d86",
+      "bytes": 22528,
+      "lines": 385
+    },
+    "server/tools/customs.ts": {
+      "exists": true,
+      "sha256": "93ba8c89b4f18704eda7070804c8e11e7f669270d953cd150abda2313ec889bf",
+      "bytes": 11298,
+      "lines": 276
+    },
+    "server/tools/fleet.ts": {
+      "exists": true,
+      "sha256": "86db1011c12e79dc880e3094ef5a9af8b79daa34c4ba3848ed40e0cc6ca12367",
+      "bytes": 10248,
+      "lines": 245
+    },
+    "server/tools/engineClient.ts": {
+      "exists": true,
+      "sha256": "6f0e0af02ad539704493364d0707895cbd41b32690bf276fc09d12feb50fc7af",
+      "bytes": 4505,
+      "lines": 104
+    },
+    "server/leads.ts": {
+      "exists": true,
+      "sha256": "2da84fb8d0608c948c4f3f4ad409de5210e4c42149d76a7a684f49bb128d4bb5",
+      "bytes": 9479,
+      "lines": 233
+    },
+    "server/env.ts": {
+      "exists": true,
+      "sha256": "b9b53c1b8f813c9c2d7e30ef2cedcc8850b2d996e030654355837d6a15f6ac14",
+      "bytes": 4712,
+      "lines": 92
+    },
+    "server.ts": {
+      "exists": true,
+      "sha256": "f996220dbda711a3fcf0dc1f8445a49d6f5004ade1b3984a48aa0f33af71be82",
+      "bytes": 47295,
+      "lines": 894
+    },
+    "src/tools/AssistantLauncher.tsx": {
+      "exists": true,
+      "sha256": "1bbe5a56fdd1b7f15339622db28e590f088209fd0891d20fd15b7aa84f892d40",
+      "bytes": 14982,
+      "lines": 438
+    },
+    "src/tools/chat.ts": {
+      "exists": true,
+      "sha256": "25b7bfbca253a89dec2e444e2d46f40b7949b4e4f75fd53728a7f6c2fba812a1",
+      "bytes": 4065,
+      "lines": 131
+    },
+    "src/styles/tools-assistant.css": {
+      "exists": true,
+      "sha256": "7520f8c498fdb5682155de0eaf37db1749d56121a400afb03f3387f8e5f579c4",
+      "bytes": 6106,
+      "lines": 346
+    },
+    "src/shell/Layout.tsx": {
+      "exists": true,
+      "sha256": "cc97e20615d9664849d166a1d7bfb5d5b6dd0901f8eeb6c937f9b7d1c343efc5",
+      "bytes": 1050,
+      "lines": 27
+    },
+    "src/shell/TopBar.tsx": {
+      "exists": true,
+      "sha256": "fa62a0fd4246913b4375fcf869450f10e0d4472e78c0ecb5783112081813e2f2",
+      "bytes": 4298,
+      "lines": 127
+    },
+    "src/content/zh/assistant.ts": {
+      "exists": true,
+      "sha256": "02232134c5b91927b247a610a9add666ae12a61ebc41700126127d6f3250e89f",
+      "bytes": 1293,
+      "lines": 32
+    },
+    "src/content/vi/assistant.ts": {
+      "exists": true,
+      "sha256": "42aa9fab1bb8b100a59b0ff29726ba7de90ab64de01e845cfa9d5c4205a88bfd",
+      "bytes": 1633,
+      "lines": 37
+    },
+    "src/content/en/assistant.ts": {
+      "exists": true,
+      "sha256": "520d155dc7e670797d653ef35609f5546b9c8df4ebc71adf79be0285b116f5ef",
+      "bytes": 1388,
+      "lines": 37
+    },
+    "src/tools/assistant-page.tsx": {
+      "exists": true,
+      "sha256": "70d9315271c534cdc18c8b16804507bcd3f1b568b5bc2065e3b71002ea4f13e0",
+      "bytes": 2119,
+      "lines": 75
+    },
+    "src/tools/routing.tsx": {
+      "exists": true,
+      "sha256": "79625b6bed2624a2038b63aefc5aac8151dd3977a2d28ef0c90e3f8bdd01e6f3",
+      "bytes": 1260,
+      "lines": 49
+    },
+    "src/tools/RoutingForm.tsx": {
+      "exists": true,
+      "sha256": "8722a1183677f007fbf97d2e08a129416b022381d858739a06d8e85d7a0d0f93",
+      "bytes": 13814,
+      "lines": 384
+    },
+    "src/tools/customs.tsx": {
+      "exists": true,
+      "sha256": "eed4b023f9b27fb33548b40ce7395df15618af86d0bc4372e1de969fd440bdb7",
+      "bytes": 1194,
+      "lines": 49
+    },
+    "src/tools/CustomsForm.tsx": {
+      "exists": true,
+      "sha256": "1a0db60e365781d4b3e940d2e2fe4bd2a491747c9923fa5b68312a7350e10035",
+      "bytes": 10664,
+      "lines": 315
+    },
+    "src/tools/fleet.tsx": {
+      "exists": true,
+      "sha256": "c44596a33a9dbea0961c44323b50a1de23360e1754a90e3c55337bfc0ea8d52a",
+      "bytes": 1136,
+      "lines": 45
+    },
+    "src/tools/FleetForm.tsx": {
+      "exists": true,
+      "sha256": "1f28665d0dac3ad0358c2a81e0bab786d0ad65698c8cf3688674c27ee773d520",
+      "bytes": 13120,
+      "lines": 368
+    },
+    "src/tools/api.ts": {
+      "exists": true,
+      "sha256": "f85b3d5a20bb5b73ea6fadad4ec6340a2fb30027739335ba8110d29a854c3c10",
+      "bytes": 13285,
+      "lines": 335
+    },
+    "src/tools/parts.tsx": {
+      "exists": true,
+      "sha256": "f630b57c0223303012351bef40206e54c90d3f169e6048036f72431c39eee05a",
+      "bytes": 1447,
+      "lines": 57
+    },
+    "src/tools/LeadModal.tsx": {
+      "exists": true,
+      "sha256": "af623108a87afc08440cdec9657a90c739febd3a16187ea964023e2a9d757156",
+      "bytes": 7837,
+      "lines": 246
+    },
+    "src/agent/content.ts": {
+      "exists": true,
+      "sha256": "d7c503fea2e9f58c2354a4b3f233fb277d2f76e3527d15ed9fb0203a5b51a7d1",
+      "bytes": 82716,
+      "lines": 1512
+    },
+    "src/agent/quoteIntel.ts": {
+      "exists": true,
+      "sha256": "b61040405301e9627890bfa3ee0562bf2b82c82452811cb16cd7e44800bc05f9",
+      "bytes": 7716,
+      "lines": 115
+    },
+    "src/agent/App.tsx": {
+      "exists": true,
+      "sha256": "398fe3b2c1b778536e2693fe886c5c0d099254c18e18386f6585f6ea3e99d728",
+      "bytes": 52733,
+      "lines": 1358
+    },
+    "src/agent/ChatPanel.tsx": {
+      "exists": true,
+      "sha256": "c78861d44fb580e6a77280b3d35742df6d2ab92affc0b5dbf1527daea2dfc37d",
+      "bytes": 9982,
+      "lines": 250
+    },
+    "src/agent/main.tsx": {
+      "exists": true,
+      "sha256": "b3d7fb2bfd6c0feb13de51a95dee29ae1e6387e77216cf09aecd7c4dc06be179",
+      "bytes": 299,
+      "lines": 13
+    },
+    "src/agent/styles.css": {
+      "exists": true,
+      "sha256": "048e67d2ceb1bed1f34d42f8b025e910d37e6f4614f3925b0d6ca057faedf50d",
+      "bytes": 54647,
+      "lines": 2065
+    },
+    "ai.html": {
+      "exists": true,
+      "sha256": "86fcafd25eb2ecdb1719f6b4a794fbe42a4f1f8ec2399dd60d3c581f6f253729",
+      "bytes": 3354,
+      "lines": 69
+    },
+    "features/quote/src/components/ai/ChatPanel.tsx": {
+      "exists": true,
+      "sha256": "728ddeca1ff5e2d7372834b3f14b1505244bb9534b696a88fe99383f0321f863",
+      "bytes": 14390,
+      "lines": 404
+    },
+    "features/quote/src/components/ai/RichText.tsx": {
+      "exists": true,
+      "sha256": "b45f4ca1773968829afef212f4f017e84b14703560a0eed8b25b02ec48b80872",
+      "bytes": 3241,
+      "lines": 128
+    },
+    "features/quote/src/components/ai/parseRichText.ts": {
+      "exists": true,
+      "sha256": "dbfe67de7323c5260f46ee2d4da965028f7c5a747901cad565e5699665f968e1",
+      "bytes": 5541,
+      "lines": 178
+    },
+    "features/quote/src/components/ai/extractCoords.ts": {
+      "exists": true,
+      "sha256": "40f282aeb752f2f8aab6ad3e5fae3eba81fc14f8fe84ad09ff35ad63a45319be",
+      "bytes": 3557,
+      "lines": 93
+    },
+    "features/quote/src/components/workspace/WorkspacePanel.tsx": {
+      "exists": true,
+      "sha256": "85b3bb66c011b5303a5a7b942c13d4341368f24a78a87275f586fd93123bbee7",
+      "bytes": 15160,
+      "lines": 386
+    },
+    "features/quote/src/components/workspace/plan.ts": {
+      "exists": true,
+      "sha256": "6de5349f016182ae9a8dbaf1168fe7e5cd4ba8344b2cda1dcf19e2f6465163aa",
+      "bytes": 7468,
+      "lines": 194
+    },
+    "features/quote/src/components/workspace/parseHints.ts": {
+      "exists": true,
+      "sha256": "7a0081e028ff0282e5cb3cf4166dbbf41b590c963af3590d6375c25028085f4a",
+      "bytes": 3040,
+      "lines": 86
+    },
+    "features/quote/src/pages/QuoteApp.tsx": {
+      "exists": true,
+      "sha256": "0809cc9da35647a9a6ef376b8f9b1e97e350548d75fc0a31fcc8bba397b92c2b",
+      "bytes": 18234,
+      "lines": 485
+    },
+    "features/quote/src/api.ts": {
+      "exists": true,
+      "sha256": "75f66788929da7121a58a9ddfe0666a4bbf42df9d20259de8def911376be22cd",
+      "bytes": 20881,
+      "lines": 604
+    },
+    "features/quote/src/state/useQuoteForm.ts": {
+      "exists": true,
+      "sha256": "5da842206b0a5b22608386922e23929dc8635b53b4628789e359f1117fffdd49",
+      "bytes": 8668,
+      "lines": 238
+    },
+    "features/quote/src/i18n/workspace.ts": {
+      "exists": true,
+      "sha256": "be06788f92ce75bb628371ed468e233585f492bf2f4667e205dd39e73a4e7781",
+      "bytes": 4753,
+      "lines": 120
+    },
+    "features/quote/src/i18n/panels.ts": {
+      "exists": true,
+      "sha256": "1ae8a52ded7d1a99bcd0f783f6406ab5df421f8bf85d0c189e4346a283ae568e",
+      "bytes": 8650,
+      "lines": 244
+    },
+    "features/quote/src/i18n/strings.ts": {
+      "exists": true,
+      "sha256": "923892850eec9b6c05885125570bbce054e0092ac2ca0446a9ae41b7d4160791",
+      "bytes": 18828,
+      "lines": 240
+    },
+    "server/quoteProxy.ts": {
+      "exists": true,
+      "sha256": "83a3d9132c680f28afcc9279ac8ae752a1a6b64221a8a79a7ec37037b9741a21",
+      "bytes": 50897,
+      "lines": 1123
+    },
+    "scripts/verify-chat-deepseek.py": {
+      "exists": true,
+      "sha256": "d31911a69aad5043c58c86ee0023ec2a9b980b723e5d9c07b8c9bc5b4ad71d7b",
+      "bytes": 24391,
+      "lines": 526
+    },
+    "scripts/verify-chat-robust.py": {
+      "exists": true,
+      "sha256": "75bb064689c4a8ddfda2e1a67d44efbb50f886e081dc83d081aaa63da5c358eb",
+      "bytes": 26291,
+      "lines": 597
+    },
+    "scripts/verify-chat-render.py": {
+      "exists": true,
+      "sha256": "2f23d95467af684f1fb42b33f51c76dad6eacd657cf5c962b273498fec72daf9",
+      "bytes": 8333,
+      "lines": 216
+    },
+    "scripts/probe-chat-live.py": {
+      "exists": true,
+      "sha256": "8806993aaba9a43fdf39163e7dac9c488bb660ec1df4f8f0479b1a9c533f5d78",
+      "bytes": 6632,
+      "lines": 139
+    },
+    "scripts/probe-tools.ts": {
+      "exists": true,
+      "sha256": "6e8673b4a288911cf1922104728894011fb4cdb0d3f1ac201c3ad6183827211d",
+      "bytes": 3090,
+      "lines": 79
+    },
+    "scripts/verify-agent-page.py": {
+      "exists": true,
+      "sha256": "80fce1b22385e63417dfda59002311bc966f6eee8ec31cef350d40d6a3160f1c",
+      "bytes": 26563,
+      "lines": 576
+    },
+    "scripts/verify-quote-page.py": {
+      "exists": true,
+      "sha256": "3f66ed5d39ceed8c3b4314252b6247b701b45d120a5403bf9a5370d87f256056",
+      "bytes": 7721,
+      "lines": 192
+    },
+    "scripts/probe-quote-api.py": {
+      "exists": true,
+      "sha256": "6998b8fd5f5847ce0099d16d50f7f6e7884f2ab6ef049e827a2f77033c7630eb",
+      "bytes": 6316,
+      "lines": 125
+    },
+    "scripts/verify-quote-timeout.py": {
+      "exists": true,
+      "sha256": "a92f3b87d7ea139466877e2ad1efda6f9cabf6478887a4a6b59d9a63d8a8099d",
+      "bytes": 27526,
+      "lines": 530
+    }
+  }
+}

@@ -52,6 +52,7 @@ npm run lint         # tsc --noEmit 类型检查
 - **`/ai` 智能体页的素材槽**：`src/agent/assets.manifest.json` 由 `npm run assets:scan` 从 `public/assets/agent/` 生成（构建时打进包），页面按清单渲染。**不要改成写死图片路径**——素材没到位会 404/破图；改成清单后缺失即自动回落到纯文字版式。素材命名与规格见 `AI-ASSET-PROMPTS.md`（动效 = 透明底循环 MP4 + 同名 PNG 首帧，reduce 动效偏好下只用 PNG）
 - **`/ai` 页的验收脚本是 `scripts/verify-agent-page.py`**（六档视口 + 汉堡菜单 + 标签切换 + 轮播 + hero→表单预填 + 表单→API 成功/失败两条分支 + 全页亮度扫描）。`verify-layout.py` 的探针是旧首页的类名，对 /ai 恒返回 None，别用它判断 /ai
 
+- **动效只走 `src/site/motion.ts`**（v10）：CSS 里**不许**写 `opacity:0` 初态，初态由 GSAP 在 JS 里设（否则重演"内容消失"事故）；入场只加在 Hero 与子页 `PageHead`；滚动区只允许「按进度改浓度/尺寸」，每页一处 `data-moment="expand"`。改完必须跑 `env -u PYTHONPATH python scripts/verify-v10-motion.py http://127.0.0.1:3300/`（断言 A/B/C/D 四段，末行需为 `MOTION: PASS`）。规则与冲突留痕见 `docs/redesign/10-v10-设计指导.md`
 - **NODE_ENV**:Render 需要显式设 `NODE_ENV=production`,否则 server.ts 走 Vite 中间件模式(dev 模式),生产静态文件不生效
 - **构建产物**:`npm run build` 同时产出前端静态文件 + `dist/server.cjs`,两者缺一不可;`npm start` 只认 dist/
 - **图片已优化**:v0.5 把 public/assets/ 从 40MB PNG 压到约 4MB JPEG(quality 80)。**新增图片走 `python scripts/optimize-images.py 新图.png --as <用途>`**(自动按规格裁切+压缩),规格见 IMAGE-SPEC.md;且 **Logo 文件必须保持 PNG**(需透明通道,转 JPEG 会出白底方块)

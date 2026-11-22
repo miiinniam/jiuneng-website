@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>玖能国际 · 运价测算（5 步表单）· 官网 v7 同款</title>
+<style>
+/* 令牌取自 src/styles/tokens.css（v7 瑞士编辑风）与 src/styles.css，不新造色值 */
+:root{
+  --paper:#ffffff; --paper-2:#f4f4f2; --paper-3:#ededea;
+  --ink:#001030; --ink-2:#2a3348; --ink-3:#6b7280;
+  --rule:#dcdcd8; --rule-strong:#001030;
+  --accent:#0040c0; --accent-ink:#00308f; --signal:#2080f8;
+  --sans:"Inter","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --fs-h1:clamp(2rem,3.6vw,3.25rem); --fs-h3:1.375rem; --fs-lead:1.1875rem;
+  --fs-body:1.0625rem; --fs-small:.875rem; --fs-micro:.75rem;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px;
+  --sp-7:48px; --sp-8:64px; --sp-9:96px;
+  --ease-enter:cubic-bezier(.22,1,.36,1); --dur-hover:200ms;
+  --maxw:1320px; --margin:clamp(20px,5vw,72px);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:var(--fs-body);
+  line-height:1.55;font-variant-numeric:tabular-nums}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 var(--margin)}
+.micro{font-size:var(--fs-micro);letter-spacing:.12em;text-transform:uppercase}
+
+/* ── 页头（同 .q-head）── */
+.q-head{padding:var(--sp-7) 0 0}
+.q-head-top{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-4);flex-wrap:wrap}
+.q-kicker{display:flex;align-items:baseline;gap:var(--sp-3)}
+.q-kicker-n{color:var(--ink);letter-spacing:.12em}
+.q-title{max-width:20ch;margin-top:var(--sp-5);font-size:var(--fs-h1);line-height:1.06;
+  letter-spacing:-.025em;font-weight:400}
+.q-lead{max-width:56ch;margin-top:var(--sp-5);font-size:var(--fs-lead);line-height:1.55;color:var(--ink-2)}
+
+/* ── 步骤条（同 .q-stepbar：顶部 1px 墨线 + 等分格 + 2px 下划线指示）── */
+.q-stepbar{margin-top:var(--sp-7);border-top:1px solid var(--ink)}
+.q-stepbar-list{display:flex;list-style:none;overflow-x:auto;scrollbar-width:thin}
+.q-step{flex:1 0 auto;min-width:132px;border-right:1px solid var(--rule)}
+.q-step:last-child{border-right:0}
+.q-step-btn{display:flex;align-items:baseline;gap:var(--sp-3);width:100%;min-height:56px;
+  padding:var(--sp-3) var(--sp-4);background:transparent;border:0;border-bottom:2px solid transparent;
+  border-radius:0;text-align:left;cursor:pointer;color:var(--ink-3);font-family:inherit;
+  transition:color var(--dur-hover) var(--ease-enter),border-color var(--dur-hover) var(--ease-enter)}
+.q-step-btn:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
+.q-step-n{letter-spacing:.12em;font-size:var(--fs-micro)}
+.q-step-l{font-size:var(--fs-small);font-weight:500}
+.q-step.is-current .q-step-btn{color:var(--ink);border-bottom-color:var(--accent);cursor:default}
+.q-step.is-current .q-step-n{color:var(--accent)}
+.q-step.is-done .q-step-btn{color:var(--ink-2)}
+.q-step.is-todo .q-step-btn{color:var(--ink-3);opacity:.6;cursor:default}
+
+/* ── 主体两栏 ── */
+.q-main{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:var(--sp-8);
+  padding:var(--sp-6) 0 var(--sp-9);align-items:start}
+.q-panel{display:none}
+.q-panel[on]{display:block}
+.q-panel h2{font-size:var(--fs-h3);font-weight:500;letter-spacing:-.01em;margin-bottom:var(--sp-2)}
+.q-hint{font-size:var(--fs-small);color:var(--ink-3);margin-bottom:var(--sp-6);max-width:52ch}
+
+/* ── 表单：下划线式输入（同 .q-input）── */
+.q-field{margin-bottom:var(--sp-5)}
+.q-field-label{display:block;font-size:var(--fs-micro);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:var(--sp-2)}
+.q-field-label .req{color:var(--accent)}
+.q-field-label .opt{text-transform:none;letter-spacing:0;color:var(--ink-3)}
+.q-input{width:100%;height:48px;padding:var(--sp-2) 0;background:transparent;border:0;
+  border-bottom:1px solid var(--rule);border-radius:0;color:var(--ink);font-size:var(--fs-body);
+  font-family:inherit;font-variant-numeric:tabular-nums}
+.q-input::placeholder{color:var(--ink-3)}
+.q-input:focus{outline:none;border-bottom:2px solid var(--ink);padding-bottom:calc(var(--sp-2) - 1px)}
+.q-row{display:grid;gap:var(--sp-5)}
+.q-row.c2{grid-template-columns:1fr 1fr}
+.q-inline{display:flex;align-items:flex-end;border-bottom:1px solid var(--rule)}
+.q-inline:focus-within{border-bottom:2px solid var(--ink)}
+.q-inline .q-input{border-bottom:0;flex:1}
+.q-inline .q-input:focus{border-bottom:0;padding-bottom:var(--sp-2)}
+.q-unit{height:48px;border:0;background:transparent;color:var(--ink-2);font-family:inherit;
+  font-size:var(--fs-small);padding:0 var(--sp-2);cursor:pointer}
+.q-unit:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+
+/* 地址行 */
+.q-addr{position:relative;padding-left:var(--sp-5)}
+.q-addr::before{content:"";position:absolute;left:0;top:22px;width:7px;height:7px;
+  border:1.5px solid var(--accent);border-radius:50%;background:var(--paper)}
+.q-addr.to::before{border-color:var(--ink)}
+.q-route-meta{display:flex;gap:var(--sp-5);flex-wrap:wrap;font-size:var(--fs-small);color:var(--ink-3);
+  padding:var(--sp-3) 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin-top:var(--sp-2)}
+.q-route-meta b{color:var(--ink);font-weight:500}
+
+/* ── 货物分类（直角网格 + 左竖条选中）── */
+.q-cats{display:grid;grid-template-columns:1fr 1fr;gap:0;
+  border-top:1px solid var(--rule);border-left:1px solid var(--rule)}
+.q-cat{position:relative;border:0;border-right:1px solid var(--rule);border-bottom:1px solid var(--rule);
+  background:var(--paper);padding:var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-5);text-align:left;
+  cursor:pointer;font-family:inherit;color:var(--ink);
+  transition:background var(--dur-hover) var(--ease-enter)}
+.q-cat:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
+@media (hover:hover) and (pointer:fine){ .q-cat:hover{background:var(--paper-2)} }
+.q-cat[on]{background:var(--paper-2)}
+.q-cat[on]::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+.q-cat-n{display:block;font-size:var(--fs-small);font-weight:500}
+.q-cat-d{display:block;margin-top:var(--sp-1);font-size:var(--fs-micro);line-height:1.5;
+  color:var(--ink-3);letter-spacing:0}
+.q-cat.wide{grid-column:1/-1}
+.q-catnote{margin-top:var(--sp-4);padding:var(--sp-3) var(--sp-4);border-left:2px solid var(--accent);
+  background:var(--paper-2);font-size:var(--fs-small);color:var(--ink-2);display:none}
+.q-catnote[on]{display:block}
+
+/* ── 明细表 ── */
+.q-items{width:100%;border-collapse:collapse;font-size:var(--fs-small)}
+.q-items th{font-size:var(--fs-micro);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);
+  font-weight:500;text-align:left;padding:0 var(--sp-2) var(--sp-2);border-bottom:1px solid var(--rule);
+  white-space:nowrap}
+.q-items td{padding:0 var(--sp-2);border-bottom:1px solid var(--rule)}
+.q-items .q-input{height:42px;font-size:var(--fs-small)}
+.q-del{width:100%;height:42px;border:0;background:transparent;color:var(--ink-3);cursor:pointer;
+  font-size:var(--fs-small);font-family:inherit}
+@media (hover:hover) and (pointer:fine){ .q-del:hover{color:var(--accent)} }
+.q-add{margin-top:var(--sp-3);border:0;background:transparent;color:var(--accent);font-family:inherit;
+  font-size:var(--fs-small);font-weight:500;cursor:pointer;padding:0;border-bottom:1px solid transparent}
+@media (hover:hover) and (pointer:fine){ .q-add:hover{border-bottom-color:var(--accent)} }
+.q-chk{display:inline-flex;align-items:center;justify-content:center;width:100%;height:42px;cursor:pointer}
+.q-chk input{width:15px;height:15px;accent-color:var(--accent)}
+
+/* ── 车型推荐（直角 + 墨线框，无阴影无渐变）── */
+.q-rec{border:1px solid var(--rule-strong);padding:var(--sp-4) var(--sp-5)}
+.q-rec-tag{font-size:var(--fs-micro);letter-spacing:.12em;text-transform:uppercase;
+  color:var(--accent);font-weight:500}
+.q-rec-m{margin-top:var(--sp-2);font-size:var(--fs-h3);font-weight:400;letter-spacing:-.01em}
+.q-chips{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-3)}
+.q-chip{font-size:var(--fs-micro);letter-spacing:.02em;padding:3px 8px;border:1px solid var(--rule);color:var(--ink-2)}
+.q-chip.warn{border-color:var(--ink);color:var(--ink)}
+.q-more{margin-top:var(--sp-3);font-size:var(--fs-small);color:var(--ink-2);background:none;border:0;
+  padding:0;border-bottom:1px solid var(--rule);cursor:pointer;font-family:inherit}
+@media (hover:hover) and (pointer:fine){ .q-more:hover{border-bottom-color:var(--ink)} }
+.q-sep{height:1px;background:var(--rule);margin:var(--sp-6) 0}
+.q-checks{display:flex;gap:var(--sp-5);flex-wrap:wrap;margin:var(--sp-2) 0 var(--sp-5)}
+.q-lbl-chk{display:inline-flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-small);
+  color:var(--ink-2);cursor:pointer;min-height:44px}
+.q-lbl-chk input{width:15px;height:15px;accent-color:var(--accent)}
+
+/* ── 提交摘要表 ── */
+.q-sum-tbl{width:100%;border-collapse:collapse;margin-top:var(--sp-4)}
+.q-sum-tbl th{width:88px;text-align:left;font-weight:400;font-size:var(--fs-micro);letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3);padding:var(--sp-3) 0;vertical-align:top;
+  border-bottom:1px solid var(--rule)}
+.q-sum-tbl td{padding:var(--sp-3) 0;font-size:var(--fs-small);border-bottom:1px solid var(--rule)}
+.q-sum-tbl tr:last-child th,.q-sum-tbl tr:last-child td{border-bottom:0}
+.q-warn{border-bottom:1px solid var(--ink)}
+
+/* ── 右侧摘要（直角、细线、无阴影）── */
+.q-aside{position:sticky;top:var(--sp-5);border:1px solid var(--rule)}
+.q-aside-hd{padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--rule);
+  font-size:var(--fs-micro);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.q-kv{display:flex;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);
+  font-size:var(--fs-small);border-bottom:1px solid var(--rule)}
+.q-kv:last-of-type{border-bottom:0}
+.q-kv .k{color:var(--ink-3);flex:0 0 auto}
+.q-kv .v{text-align:right;font-weight:500;color:var(--ink)}
+.q-kv .v.empty{color:var(--ink-3);font-weight:400}
+.q-aside-ft{padding:var(--sp-3) var(--sp-4);background:var(--paper-2);border-top:1px solid var(--rule);
+  font-size:var(--fs-micro);line-height:1.5;color:var(--ink-3)}
+
+/* ── 底部操作条 ── */
+.q-foot{position:fixed;left:0;right:0;bottom:0;background:var(--paper);
+  border-top:1px solid var(--rule);z-index:20}
+.q-foot-in{max-width:var(--maxw);margin:0 auto;padding:var(--sp-3) var(--margin);
+  display:flex;align-items:center;gap:var(--sp-3)}
+.q-foot-tip{flex:1;font-size:var(--fs-small);color:var(--ink-3)}
+.btn{min-height:44px;padding:0 var(--sp-5);border:1px solid var(--accent);background:var(--accent);
+  color:#fff;font-family:inherit;font-size:var(--fs-small);font-weight:500;letter-spacing:.02em;
+  cursor:pointer;border-radius:0;
+  transition:background var(--dur-hover) var(--ease-enter),border-color var(--dur-hover) var(--ease-enter)}
+@media (hover:hover) and (pointer:fine){ .btn:hover{background:var(--accent-ink);border-color:var(--accent-ink)} }
+.btn:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+.btn-outline{background:transparent;color:var(--ink);border:1px solid var(--rule-strong)}
+@media (hover:hover) and (pointer:fine){ .btn-outline:hover{background:var(--paper-2);color:var(--ink)} }
+.btn-text{background:none;border:0;color:var(--ink-3);padding:0;font-family:inherit;cursor:pointer;
+  font-size:var(--fs-micro);letter-spacing:.1em;text-transform:uppercase}
+@media (hover:hover) and (pointer:fine){ .btn-text:hover{color:var(--ink)} }
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn:disabled:hover{background:transparent;border-color:var(--rule-strong)}
+
+@media (max-width:1020px){
+  .q-main{grid-template-columns:1fr;gap:var(--sp-6)}
+  .q-aside{position:static}
+}
+@media (max-width:720px){
+  .q-cats{grid-template-columns:1fr}
+  .q-row.c2{grid-template-columns:1fr}
+  .q-step{min-width:116px}
+  .q-foot-in{flex-wrap:wrap}
+  .q-foot-tip{flex:1 0 100%;order:-1}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="q-head">
+    <div class="q-head-top">
+      <p class="q-kicker"><span class="micro q-kicker-n">JIUNENG</span><span class="micro" style="color:var(--ink-3)">运价测算</span></p>
+      <button class="btn-text" type="button">转人工询价 →</button>
+    </div>
+    <h1 class="q-title">填五步，拿到可执行的运价与交期</h1>
+    <p class="q-lead">系统按真实配车口径测算：先配车，再判许可档位与办证天数，最后出运价区间。</p>
+  </header>
+
+  <nav class="q-stepbar" aria-label="填报进度">
+    <ol class="q-stepbar-list" id="steps"></ol>
+  </nav>
+
+  <div class="q-main">
+    <div>
+
+      <!-- ① 线路 -->
+      <section class="q-panel" data-s="0">
+        <h2>1 · 发货地 → 目的地</h2>
+        <p class="q-hint">输入地址自动定位，或在地图上点选；跨境线路填到口岸城市即可。</p>
+
+        <div class="q-field q-addr from">
+          <label class="q-field-label" for="a1">发货地 <span class="req">*</span></label>
+          <input class="q-input" id="a1" value="广西凭祥市 · 友谊关口岸" placeholder="搜索城市、地址或口岸">
+        </div>
+        <div class="q-field q-addr to">
+          <label class="q-field-label" for="a2">目的地 <span class="req">*</span></label>
+          <input class="q-input" id="a2" value="越南河内市 · 黄梅郡" placeholder="搜索城市、地址或口岸">
+        </div>
+        <div class="q-route-meta">
+          <span>里程 <b>1,240 km</b></span>
+          <span>预计行驶 <b>32 小时</b></span>
+          <span>通关 <b>友谊关 / 峙马</b></span>
+        </div>
+      </section>
+
+      <!-- ② 分类 -->
+      <section class="q-panel" data-s="1">
+        <h2>2 · 货物分类</h2>
+        <p class="q-hint">分类决定配车口径与是否需要超限许可。</p>
+        <div class="q-cats" id="cats">
+          <button class="q-cat" type="button" data-c="normal">
+            <span class="q-cat-n">普通货物</span>
+            <span class="q-cat-d">包装成件的工业品、日用品；外廓不超 18m × 2.55m × 4.0m</span>
+          </button>
+          <button class="q-cat" type="button" data-c="equipment">
+            <span class="q-cat-n">机械设备</span>
+            <span class="q-cat-d">成套设备、机床、发电机组；需填单件尺寸</span>
+          </button>
+          <button class="q-cat" type="button" data-c="heavy">
+            <span class="q-cat-n">大型机械</span>
+            <span class="q-cat-d">挖掘机、履带设备、工程车；需尺寸 + 自重</span>
+          </button>
+          <button class="q-cat wide" type="button" data-c="oversized">
+            <span class="q-cat-n">超大型超限货物　<span style="color:var(--accent);font-size:var(--fs-micro)">超重 / 超高 / 超宽</span></span>
+            <span class="q-cat-d">风电叶片、塔筒、变压器、模块车货。系统自动判定许可档位（一类 2 天 / 二类 5 天 / 三类 15 天）与是否需轮廓图、护送方案</span>
+          </button>
+          <button class="q-cat wide" type="button" data-c="small">
+            <span class="q-cat-n">小件货物</span>
+            <span class="q-cat-d">多件零担、配件、样品；按件数与体积合并配车</span>
+          </button>
+        </div>
+        <p class="q-catnote" id="catnote"></p>
+      </section>
+
+      <!-- ③ 重量 + 明细 -->
+      <section class="q-panel" data-s="2">
+        <h2>3 · 重量与货物明细</h2>
+        <p class="q-hint">总重量必填；单件明细决定配车与许可判定是否准确。</p>
+
+        <div class="q-row c2">
+          <div class="q-field" style="margin-bottom:0">
+            <label class="q-field-label">总重量 <span class="req">*</span></label>
+            <div class="q-inline"><input class="q-input" value="25" placeholder="0"><select class="q-unit"><option>吨</option><option>公斤</option></select></div>
+          </div>
+          <div class="q-field" style="margin-bottom:0">
+            <label class="q-field-label">货值 <span class="opt">选填 · 保险与关税参考</span></label>
+            <div class="q-inline"><input class="q-input" placeholder="0.00"><select class="q-unit"><option>RMB</option><option>USD</option><option>VND</option></select></div>
+          </div>
+        </div>
+
+        <div style="height:var(--sp-6)"></div>
+        <label class="q-field-label">单件明细 <span class="opt">选填 · 一件一行，同规格填件数</span></label>
+        <table class="q-items">
+          <thead><tr>
+            <th style="width:24%">名称</th><th>长 m</th><th>宽 m</th><th>高 m</th><th>单重 t</th><th>件数</th><th style="width:52px">可叠</th><th style="width:32px"></th>
+          </tr></thead>
+          <tbody id="rows">
+            <tr>
+              <td><input class="q-input" value="塔筒节" placeholder="名称"></td>
+              <td><input class="q-input" value="30"></td>
+              <td><input class="q-input" value="3.0"></td>
+              <td><input class="q-input" value="3.0"></td>
+              <td><input class="q-input" value="25"></td>
+              <td><input class="q-input" value="1"></td>
+              <td><label class="q-chk"><input type="checkbox"></label></td>
+              <td><button class="q-del" type="button" aria-label="删除此行">✕</button></td>
+            </tr>
+          </tbody>
+        </table>
+        <button class="q-add" type="button" id="addrow">＋ 添加一行</button>
+      </section>
+
+      <!-- ④ 车型 -->
+      <section class="q-panel" data-s="3">
+        <h2>4 · 车型</h2>
+        <p class="q-hint">系统按货物自动推荐；也可手动指定车型。装卸条件一并确认。</p>
+
+        <div class="q-rec">
+          <div class="q-rec-tag">◎ 引擎推荐</div>
+          <div class="q-rec-m">大件抽拉伸缩板 80 吨 30 米</div>
+          <div class="q-chips">
+            <span class="q-chip">1 辆</span>
+            <span class="q-chip warn">三类许可 · 省内 15 个工作日</span>
+            <span class="q-chip">超限件</span>
+          </div>
+          <button class="q-more" type="button">查看其他方案（2）</button>
+        </div>
+
+        <div class="q-field" style="margin-top:var(--sp-6)">
+          <label class="q-field-label">手动指定车型 <span class="opt">留空即用推荐</span></label>
+          <select class="q-input" style="cursor:pointer">
+            <option>使用推荐车型</option>
+            <option>大件抽拉伸缩板 80 吨 30 米</option>
+            <option>低平板半挂 13 米</option>
+            <option>多轴液压轴线车 100 吨</option>
+          </select>
+        </div>
+
+        <div class="q-sep"></div>
+
+        <label class="q-field-label">装卸条件</label>
+        <div class="q-checks">
+          <label class="q-lbl-chk"><input type="checkbox" checked> 含装车（吊装）</label>
+          <label class="q-lbl-chk"><input type="checkbox"> 含卸车</label>
+          <label class="q-lbl-chk"><input type="checkbox"> 需随车吊</label>
+        </div>
+        <div class="q-row c2">
+          <div class="q-field" style="margin-bottom:0"><label class="q-field-label">装货地点 <span class="opt">选填</span></label><input class="q-input" placeholder="同发货地"></div>
+          <div class="q-field" style="margin-bottom:0"><label class="q-field-label">卸货地点 <span class="opt">选填</span></label><input class="q-input" placeholder="同目的地"></div>
+        </div>
+      </section>
+
+      <!-- ⑤ 提交 -->
+      <section class="q-panel" data-s="4">
+        <h2>5 · 确认并提交测算</h2>
+        <p class="q-hint">提交后返回运价区间、许可档位与预计交期。</p>
+
+        <table class="q-sum-tbl">
+          <tr><th>线路</th><td>凭祥友谊关 → 河内黄梅郡 · 1,240 km</td></tr>
+          <tr><th>货物</th><td>超大型超限货物 · 25 t · 1 件</td></tr>
+          <tr><th>车型</th><td>抽拉伸缩板 80t 30m · 1 辆</td></tr>
+          <tr><th>许可</th><td><span class="q-warn">三类 · 省内 15 个工作日</span></td></tr>
+          <tr><th>装卸</th><td>含装车（吊装）；装货地同发货地</td></tr>
+        </table>
+
+        <div style="margin-top:var(--sp-6)">
+          <button class="btn-outline btn" type="button">转为人工询价</button>
+        </div>
+      </section>
+
+    </div>
+
+    <aside class="q-aside">
+      <div class="q-aside-hd">当前填写</div>
+      <div class="q-kv"><span class="k">线路</span><span class="v">友谊关 → 河内</span></div>
+      <div class="q-kv"><span class="k">货物分类</span><span class="v">超大型超限</span></div>
+      <div class="q-kv"><span class="k">总重量</span><span class="v">25 吨</span></div>
+      <div class="q-kv"><span class="k">明细</span><span class="v">1 行 / 1 件</span></div>
+      <div class="q-kv"><span class="k">车型</span><span class="v">抽拉板 80t 30m</span></div>
+      <div class="q-kv"><span class="k">许可</span><span class="v">三类 · 15 工作日</span></div>
+      <div class="q-aside-ft">结果由配车引擎按实车口径计算，仅供报价参考。</div>
+    </aside>
+  </div>
+</div>
+
+<div class="q-foot">
+  <div class="q-foot-in">
+    <span class="q-foot-tip" id="tip">第 1 步 / 共 5 步</span>
+    <button class="btn-outline btn" type="button" id="prev">上一步</button>
+    <button class="btn" type="button" id="next">下一步</button>
+  </div>
+</div>
+
+<script>
+const labels=['线路','货物分类','重量明细','车型','提交测算'];
+let cur=0;
+const list=document.getElementById('steps');
+labels.forEach((t,i)=>{
+  const li=document.createElement('li'); li.className='q-step';
+  li.innerHTML='<button class="q-step-btn" type="button"><span class="q-step-n">0'+(i+1)+'</span><span class="q-step-l">'+t+'</span></button>';
+  li.querySelector('button').onclick=()=>go(i);
+  list.appendChild(li);
+});
+function go(i){
+  cur=Math.max(0,Math.min(4,i));
+  [...list.children].forEach((li,k)=>{
+    li.className='q-step '+(k===cur?'is-current':k<cur?'is-done':'is-todo');
+    li.querySelector('button').setAttribute('aria-current', k===cur?'step':'false');
+  });
+  document.querySelectorAll('.q-panel').forEach(p=>p.toggleAttribute('on',+p.dataset.s===cur));
+  document.getElementById('prev').disabled=cur===0;
+  document.getElementById('next').textContent=cur===4?'提交测算':'下一步';
+  document.getElementById('tip').textContent='第 '+(cur+1)+' 步 / 共 5 步'+(cur===4?' · 提交前请确认车型与许可':'');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+document.getElementById('prev').onclick=()=>go(cur-1);
+document.getElementById('next').onclick=()=>{
+  if(cur===4){alert('设计稿：此处 POST /api/quote/route 出区间');return;}
+  go(cur+1);
+};
+const notes={
+  normal:'普通货物：外廓不超 18m / 2.55m / 4.0m，无需超限许可。',
+  equipment:'机械设备：第 3 步请填单件长宽高，系统按件配车。',
+  heavy:'大型机械：请填尺寸与自重；履带设备可能需低平板 + 爬梯。',
+  oversized:'超限货物：系统自动判定许可档位（一类 2 天 / 二类 5 天 / 三类 15 天），并提示是否需轮廓图与护送方案。',
+  small:'小件货物：建议填件数，系统按体积与件数合并配车。'
+};
+document.querySelectorAll('.q-cat').forEach(c=>{
+  c.onclick=()=>{
+    document.querySelectorAll('.q-cat').forEach(x=>x.removeAttribute('on'));
+    c.setAttribute('on','');
+    const n=document.getElementById('catnote');
+    n.textContent=notes[c.dataset.c]; n.setAttribute('on','');
+  };
+});
+document.getElementById('addrow').onclick=()=>{
+  const tr=document.createElement('tr');
+  tr.innerHTML='<td><input class="q-input" placeholder="名称"></td>'
+  +'<td><input class="q-input"></td><td><input class="q-input"></td><td><input class="q-input"></td>'
+  +'<td><input class="q-input"></td><td><input class="q-input" value="1"></td>'
+  +'<td><label class="q-chk"><input type="checkbox"></label></td>'
+  +'<td><button class="q-del" type="button" aria-label="删除此行">✕</button></td>';
+  document.getElementById('rows').appendChild(tr);
+};
+document.getElementById('rows').addEventListener('click',e=>{
+  if(e.target.classList.contains('q-del') && document.querySelectorAll('#rows tr').length>1){
+    e.target.closest('tr').remove();
+  }
+});
+go(0);
+</script>
+</body>
+</html>
