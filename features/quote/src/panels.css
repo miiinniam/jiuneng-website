@@ -181,8 +181,17 @@
 
 .q-map-hint {
   margin: 0;
+  flex: 1;
+  min-width: 0;
   color: var(--ink-3);
   letter-spacing: 0.06em;
+}
+
+/* 起终点两颗重设按钮并排（起点在左、终点在右，与表单字段顺序一致） */
+.q-map-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--sp-2);
 }
 
 .q-map-reset {

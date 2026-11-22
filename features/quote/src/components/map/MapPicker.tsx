@@ -29,20 +29,24 @@ export default function MapPicker({ origin, destination, waypoints, geometry, on
   const { lang } = useLang();
   const m = mapText(lang);
   const [mounted, setMounted] = useState(false);
-  const [forceDestination, setForceDestination] = useState(false);
+  /** 重设模式：点了哪颗按钮，下一次点地图就改哪个点。null = 正常（防误触）模式。 */
+  const [force, setForce] = useState<'origin' | 'dest' | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
     setMounted(true);
   }, []);
 
-  const hint = forceDestination
-    ? m.map.pickDestNew
-    : !origin
-      ? m.map.pickOrigin
-      : !destination
-        ? m.map.pickDest
-        : m.map.settled;
+  const hint =
+    force === 'origin'
+      ? m.map.pickOriginNew
+      : force === 'dest'
+        ? m.map.pickDestNew
+        : !origin
+          ? m.map.pickOrigin
+          : !destination
+            ? m.map.pickDest
+            : m.map.settled;
 
   return (
     <div className="q-map">
@@ -55,8 +59,8 @@ export default function MapPicker({ origin, destination, waypoints, geometry, on
               waypoints={waypoints}
               geometry={geometry}
               onPick={onPick}
-              forceDestination={forceDestination}
-              onForceConsumed={() => setForceDestination(false)}
+              force={force}
+              onForceConsumed={() => setForce(null)}
             />
           </Suspense>
         ) : (
@@ -67,14 +71,24 @@ export default function MapPicker({ origin, destination, waypoints, geometry, on
       <div className="q-map-bar">
         <p className="q-map-hint micro">{hint}</p>
         {origin && destination && (
-          <button
-            type="button"
-            className="q-map-reset"
-            data-active={forceDestination ? 'true' : 'false'}
-            onClick={() => setForceDestination((v) => !v)}
-          >
-            {forceDestination ? m.map.cancelReset : m.map.reset}
-          </button>
+          <div className="q-map-actions">
+            <button
+              type="button"
+              className="q-map-reset"
+              data-active={force === 'origin' ? 'true' : 'false'}
+              onClick={() => setForce((f) => (f === 'origin' ? null : 'origin'))}
+            >
+              {force === 'origin' ? m.map.cancelReset : m.map.resetOrigin}
+            </button>
+            <button
+              type="button"
+              className="q-map-reset"
+              data-active={force === 'dest' ? 'true' : 'false'}
+              onClick={() => setForce((f) => (f === 'dest' ? null : 'dest'))}
+            >
+              {force === 'dest' ? m.map.cancelReset : m.map.reset}
+            </button>
+          </div>
         )}
       </div>
     </div>

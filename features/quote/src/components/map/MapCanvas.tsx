@@ -17,9 +17,9 @@ import { useLang } from '../../../../../src/shell/LangProvider';
 // 所以这个循环引用不会产生运行时依赖，也不会把 leaflet 拉回主包）
 import type { MapPickerProps } from './MapPicker';
 
-/** 画布内部额外需要的：父层「重设终点」模式的开关 */
+/** 画布内部额外需要的：父层「重设起点 / 重设终点」模式 */
 type CanvasProps = MapPickerProps & {
-  forceDestination: boolean;
+  force: 'origin' | 'dest' | null;
   onForceConsumed: () => void;
 };
 
@@ -45,14 +45,20 @@ function makePin(kind: PinKind, tag: string): L.DivIcon {
 function ClickPicker({
   origin,
   destination,
-  forceDestination,
+  force,
   onPick,
   onForceConsumed,
 }: CanvasProps) {
   useMapEvents({
     click(e) {
       const point: LatLng = { lat: e.latlng.lat, lng: e.latlng.lng };
-      if (forceDestination) {
+      // 显式重设模式优先：起终点都在时也能单独改其中一个（否则下面两个分支都进不去）
+      if (force === 'origin') {
+        onPick({ origin: point });
+        onForceConsumed();
+        return;
+      }
+      if (force === 'dest') {
         onPick({ destination: point });
         onForceConsumed();
         return;
@@ -112,7 +118,7 @@ export default function MapCanvas({
   waypoints,
   geometry,
   onPick,
-  forceDestination,
+  force,
   onForceConsumed,
 }: CanvasProps) {
   const { lang } = useLang();
@@ -151,7 +157,7 @@ export default function MapCanvas({
         destination={destination}
         waypoints={waypoints}
         onPick={onPick}
-        forceDestination={forceDestination}
+        force={force}
         onForceConsumed={onForceConsumed}
       />
       <FitToRoute origin={origin} destination={destination} waypoints={waypoints} geometry={geometry} />
