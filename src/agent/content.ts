@@ -644,7 +644,7 @@ const zh: AgentContent = {
       },
     ],
     legal: '玖能国际有限责任公司 · 广西玖一进出口贸易有限公司 · 备案信息待补充',
-    site: 'site.jiuneng.space',
+    site: 'jiuneng.space',
   },
 };
 
@@ -1074,7 +1074,7 @@ const en: AgentContent = {
       },
     ],
     legal: 'JIUNENG INTERNATIONAL COMPANY LIMITED · Guangxi Jiuyi Import & Export Trading Co., Ltd. · Registration details pending',
-    site: 'site.jiuneng.space',
+    site: 'jiuneng.space',
   },
 };
 
@@ -1504,7 +1504,7 @@ const vi: AgentContent = {
       },
     ],
     legal: 'CÔNG TY TNHH QUỐC TẾ JIUNENG · Công ty TNHH XNK Cửu Nhất Quảng Tây · Thông tin đăng ký đang cập nhật',
-    site: 'site.jiuneng.space',
+    site: 'jiuneng.space',
   },
 };
 

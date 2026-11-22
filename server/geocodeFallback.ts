@@ -2,7 +2,7 @@
  * 地址检索的**线上兜底链**。
  *
  * 为什么需要：线上引擎（Render）调公共 Nominatim 恒返空 —— OSM 对数据中心 IP 有限制/封禁。
- * 实测 `https://site.jiuneng.space/api/quote/geocode?q=` 传「南宁 / Hanoi / Pingxiang / 凭祥」
+ * 实测 `https://jiuneng.space/api/quote/geocode?q=` 传「南宁 / Hanoi / Pingxiang / 凭祥」
  * 全部 `{"results":[]}`，而同一条链路在本地完全正常（本地 IP 未被限）。
  * 后果不止是 AI 设不了路线：**网页表单的地址建议也一起失效**（两条路共用一个路由）。
  *

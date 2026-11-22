@@ -1,5 +1,5 @@
-# https://site.jiuneng.space/robots.txt
+# https://jiuneng.space/robots.txt
 User-agent: *
 Allow: /
 
-Sitemap: https://site.jiuneng.space/sitemap.xml
+Sitemap: https://jiuneng.space/sitemap.xml
