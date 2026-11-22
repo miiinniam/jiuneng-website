@@ -17,6 +17,8 @@ import {
 } from './server/agentChat';
 import { agentI18n, type Lang } from './src/agent/content';
 import { runQuote, PLACES, VEHICLES, probeEngine } from './server/osrmQuote';
+// 报价功能（features/quote）后端代理：/api/quote/* 全部端点，契约见 features/quote/CONTRACT.md §3
+import { createQuoteRouter } from './server/quoteProxy';
 
 dotenv.config();
 
@@ -697,6 +699,11 @@ app.post('/api/fleet-match', async (req: Request, res: Response) => {
 });
 // ==== v7 API ROUTES END ====
 
+// 报价功能（features/quote）代理层 —— 契约见 features/quote/CONTRACT.md §3
+// 公开：/reference、/geocode、/route（服务端重建白名单）、/ai（SSE）、/templates（空数组）
+// 内部：x-quote-key 通过后 /route 回引擎原样 + /templates 增删改 + /batch + /ddp + /customs
+app.use('/api/quote', createQuoteRouter());
+
 // 本地评审用的脚本化模型：只有显式设 AGENT_CHAT_DEMO=1 才生效（生产不设该变量 → 走真 Gemini）。
 // 工具调用是**真的**（会打到真实测算引擎），只有措辞是预置的；回复末尾带本机演示标记，避免评审时被误导。
 const DEMO_REPLY: Record<Lang, { route: string; other: string }> = {
@@ -824,6 +831,9 @@ const PAGES: Record<string, string> = {
   '/projects': 'projects.html',
   '/about': 'about.html',
   '/contact': 'contact.html',
+  // 报价功能（features/quote）：公开版与内部版共用同一个 HTML 入口，由前端按 pathname 判别 scope
+  '/quote': 'quote.html',
+  '/quote/internal': 'quote.html',
 };
 
 async function servePage(res: Response, file: string) {

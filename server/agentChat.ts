@@ -41,10 +41,20 @@ export type SseEvent =
   | { event: 'text'; data: { content: string } }
   | { event: 'tool_start'; data: { name: string; label: string } }
   | { event: 'tool_done'; data: { name: string; ok: boolean; summary: string } }
+  /** 报价工具专用：把表单补丁下发前端（**单向流，不做 RPC**）。`patch` 里只放表单字段。 */
+  | { event: 'form_patch'; data: { patch: Record<string, unknown>; reason: string } }
+  /** 报价工具专用：确定性引擎的测算结果。**只含区间口径**，不许带 breakdown / cost_* */
+  | { event: 'quote_result'; data: Record<string, unknown> }
   | { event: 'error'; data: { message: string } }
   | { event: 'done'; data: { tools: number; rounds: number; aborted?: boolean } };
 
-type ToolResult = { ok: boolean; summary: string; payload: Record<string, unknown> };
+export type ToolResult = {
+  ok: boolean;
+  summary: string;
+  payload: Record<string, unknown>;
+  /** 工具想额外下行给前端的事件（form_patch / quote_result）—— 编排器在 tool_done 之后转发 */
+  events?: SseEvent[];
+};
 
 /* ── 工具声明（Gemini functionDeclarations 格式）────────── */
 
@@ -129,7 +139,10 @@ export const AGENT_TOOLS = [
     description:
       '根据货物件数与单件尺寸重量推荐车型与车数，并判定是否超限（超长/超宽/超高/超重）与是否需要拆分。'
       + '客户问「用什么车 / 要几辆 / 这个尺寸能不能装 / 会不会超限」时调用。'
-      + '本工具只回答车型、车数与超限，不返回任何价格；价格问题请改用 query_route_cost。',
+      + '本工具只回答车型、车数与超限，不返回任何价格；价格问题请改用 query_route_cost。'
+      + '**车型名与参数一律取自车辆型号库，禁止自行推断或改写车型名**：'
+      + '只许使用返回值里的 display_name 讲车型，库里没有的车型不要提；'
+      + 'max_load_ton 与 length_m 原样转述，length_m 或 axle_config 为 null 时如实说「库内暂无该参数」，不得估算补齐。',
     parameters: {
       type: 'object',
       properties: {
@@ -324,7 +337,16 @@ export async function matchVehicles(args: Record<string, unknown>): Promise<Tool
   const result = (await matchFleet(parsed.value)) as
     | {
         ok: true;
-        groups: { model: string; category: string; vehicle_count: number; reason: string; flags: string[] }[];
+        groups: {
+          model: string;
+          display_name: string;
+          category: string;
+          max_load_ton: number;
+          vehicle_count: number;
+          reason: string;
+          flags: string[];
+          spec: import('./tools/vehicleModels').VehicleSpec | null;
+        }[];
         total_trucks: number;
         oversize: { blocked: boolean; basis: string };
       }
@@ -333,8 +355,25 @@ export async function matchVehicles(args: Record<string, unknown>): Promise<Tool
     return { ok: false, summary: result.note, payload: { ok: false, reason: result.reason, note: result.note } };
   }
 
-  const groups = result.groups
-    .map((g) => `${g.category} × ${g.vehicle_count} 辆（${g.reason}）`)
+  /* 只逐键挑库内 4 个字段给模型：spec 整块塞进去会连 width/height/volume/装载效率一起暴露。
+     spec 为 null（车型库不可达）时，length_m / axle_config 显式给 null —— 键不许省，省了模型会自己猜。 */
+  const groupsOut = result.groups.map((g) => ({
+    display_name: g.display_name,
+    max_load_ton: g.max_load_ton,
+    length_m: g.spec?.length_m ?? null,
+    axle_config: g.spec?.axle_config ?? null,
+    vehicle_count: g.vehicle_count,
+    reason: g.reason,
+    flags: g.flags,
+  }));
+
+  const groups = groupsOut
+    .map((g) => {
+      const head = `${g.display_name} · 载 ${g.max_load_ton} 吨`;
+      const len = g.length_m === null ? '' : ` · ${g.length_m} 米`;
+      const axle = g.axle_config === null ? '' : `（${g.axle_config}）`;
+      return `${head}${len}${axle} · ${g.vehicle_count} 辆`;
+    })
     .join('；');
   const oversizeLine = result.oversize.blocked
     ? '该票货物按现有车型配不上车：存在超限件，需专项方案或拆分，请联系项目经理评估。'
@@ -342,7 +381,15 @@ export async function matchVehicles(args: Record<string, unknown>): Promise<Tool
   return {
     ok: true,
     summary: `${groups || '未能匹配到合适车型'}；共 ${result.total_trucks} 辆。${oversizeLine}`,
-    payload: { ok: true, ...result },
+    payload: {
+      ok: true,
+      groups: groupsOut,
+      total_trucks: result.total_trucks,
+      oversize: result.oversize,
+      usage_rule:
+        '车型名只能原样使用 groups[].display_name，参数只能引用 max_load_ton / length_m / axle_config；'
+        + '为 null 的参数如实说「库内暂无」，不得推断、补全或改写车型名。',
+    },
   };
 }
 
@@ -642,9 +689,20 @@ export async function* runAgentChat(opts: {
   history: ChatTurn[];
   model: ChatModel;
   lang: Lang;
+  /** 工具集：默认全站助手那 4 个。报价助手传自己的工具表 —— 同一编排器，不另写一套循环。 */
+  tools?: unknown[];
+  /** 工具执行器：默认 executeTool。报价工具用它做「校验 + 算补丁」。 */
+  execute?: (name: string, args: Record<string, unknown>, lang: Lang) => Promise<ToolResult>;
+  /** 工具状态条文案：默认 toolLabel。 */
+  label?: (name: string, lang: Lang) => string;
+  /** 系统提示词：默认 systemPrompt(lang)。报价助手要一套「只给区间」的口径。 */
+  system?: string;
 }): AsyncGenerator<SseEvent, void, void> {
   const { history, model, lang } = opts;
-  const system = systemPrompt(lang);
+  const tools = opts.tools ?? AGENT_TOOLS;
+  const exec = opts.execute ?? executeTool;
+  const labelOf = opts.label ?? toolLabel;
+  const system = opts.system ?? systemPrompt(lang);
 
   const contents: unknown[] = history.map((turn) => ({
     role: turn.role === 'user' ? 'user' : 'model',
@@ -662,7 +720,7 @@ export async function* runAgentChat(opts: {
       const calls: ToolCall[] = [];
       let streamedText = false;
 
-      for await (const ev of model.stream(contents, { system, tools: AGENT_TOOLS })) {
+      for await (const ev of model.stream(contents, { system, tools })) {
         if (ev.text) {
           streamedText = true;
           anyText = true;
@@ -683,9 +741,12 @@ export async function* runAgentChat(opts: {
       const responses: unknown[] = [];
       for (const call of calls) {
         toolCount += 1;
-        yield { event: 'tool_start', data: { name: call.name, label: toolLabel(call.name, lang) } };
-        const result = await executeTool(call.name, call.args ?? {}, lang);
+        yield { event: 'tool_start', data: { name: call.name, label: labelOf(call.name, lang) } };
+        const result = await exec(call.name, call.args ?? {}, lang);
         yield { event: 'tool_done', data: { name: call.name, ok: result.ok, summary: result.summary } };
+        // 工具下行的副作用事件（报价工具用它改表单 / 回测算结果）：放在 tool_done **之后** ——
+        // 前端先看到「工具完成」再收补丁，不会出现「表单已变但工具还没报完」的错序。
+        for (const extra of result.events ?? []) yield extra;
         responses.push({ functionResponse: { name: call.name, response: result.payload } });
       }
       contents.push({ role: 'user', parts: responses });

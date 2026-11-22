@@ -61,12 +61,45 @@ const ENGINE_OK = {
 
 type Stub = { calls: { url: string; body: unknown }[]; restore: () => void };
 
+/** 车型库桩：与引擎 /reference/vehicle-models 同形状（category → 行数组）。
+ *  带成本列与 notes 是**故意的** —— 断言它们不许跟着 VehicleSpec 出门。 */
+const CATALOGUE = {
+  平板车: [
+    {
+      model_id: 'flatbed_low_17m5',
+      display_name: '低平板 17.5米',
+      max_load_ton: 38,
+      length_m: 17.5,
+      width_m: 3.0,
+      height_m: 1.2,
+      max_cargo_height_m: 3.2,
+      loading_efficiency: 0.9,
+      curb_weight_ton: 18,
+      floor_area_m2: 52.5,
+      effective_volume_m3: 168,
+      axle_config: 'TR-02',
+      suitable_cargo_types: ['normal'],
+      base_rate_vnd_per_km: 52000,
+      fixed_surcharge_vnd: 3000000,
+      toll_rate_vnd_per_km: 1800,
+      fuel_l_per_100km: 42,
+      notes: '供应商A报价，勿外传',
+    },
+  ],
+};
+
 function stubEngine(opts: { body?: unknown; status?: number; throws?: boolean } = {}): Stub {
   const calls: { url: string; body: unknown }[] = [];
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    calls.push({ url: String(input), body: init?.body ? JSON.parse(String(init.body)) : null });
+    const url = String(input);
+    calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null });
     if (opts.throws) throw new Error('connect ECONNREFUSED');
+    // 必须按 URL 分流：不分流时配车回包会被当成车型库解析（groups 数组被读成类别），
+    // spec 里就会塞进假数据，泄漏断言随之误报（实测踩过）。
+    if (url.includes('/reference/vehicle-models')) {
+      return new Response(JSON.stringify(CATALOGUE), { status: 200 });
+    }
     return new Response(JSON.stringify(opts.body ?? ENGINE_OK), { status: opts.status ?? 200 });
   }) as typeof fetch;
   return { calls, restore: () => { globalThis.fetch = original; } };
@@ -89,8 +122,16 @@ test('出参白名单：组对象只有 model|category|vehicle_count|reason|flag
     assert.equal(out.ok, true);
     if (!out.ok) return;
     assert.equal(out.groups.length, 1);
-    assert.deepEqual(Object.keys(out.groups[0]).sort(), ['category', 'flags', 'model', 'reason', 'vehicle_count']);
+    assert.deepEqual(
+      Object.keys(out.groups[0]).sort(),
+      ['category', 'display_name', 'flags', 'max_load_ton', 'model', 'reason', 'spec', 'vehicle_count'],
+    );
     assert.equal(out.groups[0].model, 'flatbed_low_17m5');
+    // 车型名与载重一律取库：库说 38 吨、引擎说别的也以库为准
+    assert.equal(out.groups[0].display_name, '低平板 17.5米');
+    assert.equal(out.groups[0].max_load_ton, 38);
+    assert.equal(out.groups[0].spec?.length_m, 17.5);
+    assert.equal(out.groups[0].spec?.axle_config, 'TR-02');
     assert.equal(out.groups[0].category, '平板车');
     assert.equal(out.groups[0].vehicle_count, 1);
     assert.equal(out.groups[0].reason, '超长件，需低平板');
@@ -112,9 +153,17 @@ test('丢弃 breakdown / pairs[].per_truck / locked / 金额字段', async () =>
     const out = await matchFleet(parsed.value);
     const json = JSON.stringify(out);
     // 用带引号的键名做断言：`blocked` 里就含 "locked" 子串，裸词匹配会误报
-    for (const forbidden of ['"breakdown"', '"per_truck"', '"locked"', '"price', '"profit', '"margin', '"pair_id"', '"count_doctrine"', '"axle_lines"', '"vehicle_breakdowns"', '"confirm"', '"model_id"', '"dim_flags"']) {
+    // ⚠️ `"model_id"` 已从禁用表移除：VehicleSpec 合法携带 model_id（库的主键），
+    //    它是车型库字段而不是桌面工作台口径；配车结果里的车型键名仍是 `model`。
+    for (const forbidden of ['"breakdown"', '"per_truck"', '"locked"', '"price', '"profit', '"margin', '"pair_id"', '"count_doctrine"', '"axle_lines"', '"vehicle_breakdowns"', '"confirm"', '"dim_flags"']) {
       assert.ok(!json.includes(forbidden), `响应体泄漏了内部字段 ${forbidden}`);
     }
+    // 车型库的成本单价与供应商备注一个都不许跟着 spec 出门（这是 P3 的红线）
+    for (const leaked of ['"base_rate_vnd_per_km"', '"fixed_surcharge_vnd"', '"toll_rate_vnd_per_km"', '"fuel_l_per_100km"', '"notes"']) {
+      assert.ok(!json.includes(leaked), `车型库成本/备注字段泄漏 ${leaked}`);
+    }
+    // 反向自证：spec 确实是「有内容」的，否则上面那组断言是空转假通过
+    assert.ok(json.includes('"axle_config"'), 'spec 没挂上，泄漏断言等于空转');
   } finally {
     stub.restore();
   }

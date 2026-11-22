@@ -12,6 +12,7 @@
  * 理由：官网只回答「用什么车、几辆、是否超限」，桌面版的配车工作台细节不外露。
  */
 import { EngineError, engineJson } from './engineClient.ts';
+import { specMap, type VehicleSpec } from './vehicleModels.ts';
 
 export type FleetItem = {
   name: string;
@@ -28,14 +29,25 @@ export type FleetInput = {
   volume_m3?: number;
   cargo_type?: string;
   items: FleetItem[];
+  /**
+   * 允许超限运输配车（引擎 v016 开关）。缺省 false：
+   * 超限件在库内配不出时会如实报 blocked，而不是偷偷按普通件配。
+   */
+  allow_oversized?: boolean;
 };
 
 export type FleetGroup = {
   model: string;
+  /** 车型库 display_name —— 对客户只说库里的名字，不许模型自造；库查不到时回落 model */
+  display_name: string;
   category: string;
+  /** 车型库额定载重（吨）；库查不到时回落引擎值，再取不到为 0 */
+  max_load_ton: number;
   vehicle_count: number;
   reason: string;
   flags: string[];
+  /** 库内完整配置（车长/轴型/可伸缩宽…）；库查询失败为 null —— 拿不到就如实报，不许推测 */
+  spec: VehicleSpec | null;
 };
 
 export type FleetMatch =
@@ -112,6 +124,7 @@ export function parseFleetInput(raw: unknown): ParseResult {
   const value: FleetInput = { weight_kg: totalWeight, items };
   if (volume !== null && volume > 0) value.volume_m3 = volume;
   if (cargoType) value.cargo_type = cargoType;
+  if (typeof body.allow_oversized === 'boolean') value.allow_oversized = body.allow_oversized;
   return { ok: true, value };
 }
 
@@ -176,16 +189,24 @@ function customerReason(raw: unknown, vehicleCount: number): string {
   return cleaned || fallback;
 }
 
-function rebuild(raw: EngineFit): FleetMatch {
+function rebuild(raw: EngineFit, specs: Map<string, VehicleSpec>): FleetMatch {
   const rawGroups = Array.isArray(raw.groups) ? (raw.groups as EngineGroup[]) : [];
   const groups: FleetGroup[] = rawGroups.map((g) => {
     const count = toInt(g.vehicle_count, 0);
+    const modelId = text(g.model_id);
+    // 库优先、引擎次之、最后回落 model_id：三层都是「已有事实」，没有一层是推测
+    const spec = specs.get(modelId) ?? null;
+    const rawLoad = Number(g.max_load_ton);
+    const loadTon = spec ? spec.max_load_ton : Number.isFinite(rawLoad) ? rawLoad : 0;
     return {
-      model: text(g.model_id),
+      model: modelId,
+      display_name: spec?.display_name || text(g.display_name) || modelId,
       category: categoryLabel(g.category),
+      max_load_ton: loadTon,
       vehicle_count: count,
       reason: customerReason(g.reason, count),
       flags: sanitizeFlags(g.dim_flags),
+      spec,
     };
   });
   const oversize = (raw.oversize && typeof raw.oversize === 'object' ? raw.oversize : {}) as Record<string, unknown>;
@@ -229,10 +250,14 @@ export async function matchFleet(input: FleetInput): Promise<FleetMatch> {
   };
   if (input.volume_m3 !== undefined) payload.volume_m3 = input.volume_m3;
   if (input.cargo_type) payload.cargo_type = input.cargo_type;
+  // 超限放行：不给引擎这个键时它按默认 false 走，超限件会如实报 blocked（不回假方案）
+  if (input.allow_oversized) payload.allow_oversized = true;
 
   try {
     const raw = await engineJson<EngineFit>('/reference/fit-vehicles', { method: 'POST', body: payload });
-    return rebuild(raw ?? {});
+    // 车型库配置与配车并行取：库查询失败只让 spec 为 null，不影响配车本身
+    const specs = await specMap();
+    return rebuild(raw ?? {}, specs);
   } catch (error) {
     const code = error instanceof EngineError ? error.code : 'engine_error';
     console.warn('[fleet] 匹配失败：', code, (error as Error)?.message ?? error);
