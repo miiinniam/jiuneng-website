@@ -1388,3 +1388,94 @@
     flex: 1 1 100%;
   }
 }
+
+/* ────────────────── 设计稿移植：两栏 + 右侧「当前填写」摘要 ──────────────────
+   来源 docs/ai-inquiry/mockups/quote-form-5steps.html 的 .q-aside / .q-kv / .q-foot。
+   只加版式，不改任何业务类（.q-panel / .q-nav / .q-results 的规则原样保留）。 */
+
+.q-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: var(--sp-8);
+  align-items: start;
+}
+
+.q-col-main {
+  min-width: 0;
+}
+
+.q-aside {
+  position: sticky;
+  top: var(--sp-5);
+  border: 1px solid var(--rule);
+  background: transparent;
+}
+
+.q-aside-hd {
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.q-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-small);
+  border-bottom: 1px solid var(--rule);
+}
+
+.q-kv:last-of-type {
+  border-bottom: 0;
+}
+
+.q-kv .k {
+  color: var(--ink-3);
+  flex: 0 0 auto;
+}
+
+.q-kv .v {
+  color: var(--ink);
+  font-weight: 500;
+  text-align: right;
+  word-break: break-word;
+}
+
+.q-kv .v.empty {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+.q-aside-ft {
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--rule);
+  background: var(--paper-2);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+/* 底部条左侧进度（右侧按钮沿用 .q-nav-btns） */
+.q-foot-tip {
+  flex: 1;
+  margin: 0;
+  min-width: 140px;
+  font-size: var(--fs-small);
+  color: var(--ink-3);
+}
+
+/* 窄屏：摘要卡落到主栏下方，不再粘住 */
+@media (max-width: 1100px) {
+  .q-cols {
+    grid-template-columns: 1fr;
+    gap: var(--sp-6);
+  }
+
+  .q-aside {
+    position: static;
+  }
+}

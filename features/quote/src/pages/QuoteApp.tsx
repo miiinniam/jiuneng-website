@@ -32,6 +32,7 @@ import VehicleStep from '../components/wizard/VehicleStep';
 import CostStep from '../components/wizard/CostStep';
 import ReviewStep from '../components/wizard/ReviewStep';
 import KeyGate from '../components/wizard/KeyGate';
+import QuoteAside from '../components/wizard/QuoteAside';
 
 import PublicResult from '../components/results/PublicResult';
 import InternalResult from '../components/results/InternalResult';
@@ -458,7 +459,9 @@ export default function QuoteApp({ scope }: { scope: QuoteScope }) {
       </header>
 
       <main className="q-main">
-        <div className="wrap">
+        <div className="wrap q-cols">
+          {/* 左栏：向导主体（步骤条 + 当前步面板 + 结果）；右栏：设计稿的「当前填写」摘要卡 */}
+          <div className="q-col-main">
           {internal ? (
             <div className="q-tpl-slot">
               <TemplateBar scope={scope} form={form} onApply={apply} />
@@ -500,6 +503,8 @@ export default function QuoteApp({ scope }: { scope: QuoteScope }) {
             </div>
 
             <div className="q-nav">
+              {/* 设计稿的底部条：左边进度、右边操作。清空按钮保留（功能不能丢） */}
+              <p className="q-foot-tip">第 {step + 1} 步 / 共 {labels.length} 步</p>
               <div className="q-nav-btns">
                 {step > 0 ? (
                   <button type="button" className="btn btn-outline" onClick={goPrev}>
@@ -594,6 +599,8 @@ export default function QuoteApp({ scope }: { scope: QuoteScope }) {
               ) : null}
             </section>
           ) : null}
+          </div>
+          <QuoteAside form={form} />
         </div>
       </main>
 
