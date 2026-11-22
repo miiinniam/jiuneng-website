@@ -21,6 +21,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { createQuoteAiHandler } from './quoteAi';
+import { geocodeFallback } from './geocodeFallback';
 import crypto from 'crypto';
 import { engineApiBase, engineKey } from './env.ts';
 
@@ -924,20 +925,23 @@ export function createQuoteRouter(): Router {
       return;
     }
     const r = await callEngine(`/geocode?q=${encodeURIComponent(q)}&limit=6`, { timeoutMs: GEOCODE_TIMEOUT_MS });
-    if (!r.ok || !Array.isArray(r.data)) {
-      res.json({ results: [] });
-      return;
+    let results: Array<{ label: string; lat: number; lng: number }> = [];
+    if (r.ok && Array.isArray(r.data)) {
+      results = r.data
+        .map((item) => {
+          const o = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+          const label = typeof o.display_name === 'string' ? o.display_name : typeof o.label === 'string' ? o.label : '';
+          const lat = toNumberOr(o.lat, NaN);
+          const lng = toNumberOr(o.lng, NaN);
+          if (!label || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+          return { label, lat, lng };
+        })
+        .filter((x): x is { label: string; lat: number; lng: number } => x !== null);
     }
-    const results = r.data
-      .map((item) => {
-        const o = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
-        const label = typeof o.display_name === 'string' ? o.display_name : typeof o.label === 'string' ? o.label : '';
-        const lat = toNumberOr(o.lat, NaN);
-        const lng = toNumberOr(o.lng, NaN);
-        if (!label || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-        return { label, lat, lng };
-      })
-      .filter((x): x is { label: string; lat: number; lng: number } => x !== null);
+    // 线上引擎调公共 Nominatim 恒返空（Render 的数据中心 IP 被 OSM 限制，实测中英越三种写法全空），
+    // 而本地同一条链正常 → 引擎空就交给官网侧兜底链（中文别名 → Photon）。
+    // 表单地址建议与 AI 的 set_route 共用这一处，别只在其中一条上加兜底。
+    if (!results.length) results = await geocodeFallback(q, 6);
     res.json({ results });
   });
 
@@ -1094,20 +1098,27 @@ export function createQuoteRouter(): Router {
       const r = await callEngine(`/geocode?q=${encodeURIComponent(q)}&limit=1`, {
         timeoutMs: GEOCODE_TIMEOUT_MS,
       });
-      // 引擎这个端点回的是**数组**（不是 {results:[...]}）—— 照本文件 /geocode 路由的读法，别猜。
-      if (!r.ok || !Array.isArray(r.data)) return null;
-      const first = (r.data[0] && typeof r.data[0] === 'object' ? r.data[0] : null) as Record<string, unknown> | null;
-      if (!first) return null;
-      const label =
-        typeof first.display_name === 'string'
-          ? first.display_name
-          : typeof first.label === 'string'
-            ? first.label
-            : '';
-      const lat = toNumberOr(first.lat, NaN);
-      const lng = toNumberOr(first.lng, NaN);
-      if (!label || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-      return { label: label.slice(0, 120), lat, lng };
+      // 引擎这个端点回的是**数组**（不是 {results:[...]}）—— 照抄本文件 /geocode 路由的读法，别猜。
+      if (r.ok && Array.isArray(r.data)) {
+        const first = (r.data[0] && typeof r.data[0] === 'object' ? r.data[0] : null) as Record<string, unknown> | null;
+        if (first) {
+          const label =
+            typeof first.display_name === 'string'
+              ? first.display_name
+              : typeof first.label === 'string'
+                ? first.label
+                : '';
+          const lat = toNumberOr(first.lat, NaN);
+          const lng = toNumberOr(first.lng, NaN);
+          if (label && Number.isFinite(lat) && Number.isFinite(lng)) {
+            return { label: label.slice(0, 120), lat, lng };
+          }
+        }
+      }
+      // 线上引擎调 Nominatim 恒空（Render IP 被 OSM 限制）→ 与表单共用同一条兜底链，
+      // 否则 AI 会对着「南宁」说「检索不到坐标」，而表单里明明是能搜到的。
+      const hits = await geocodeFallback(q, 1);
+      return hits[0] ?? null;
     },
     runQuote: async (form) => {
       // 与 /route **同一条链路**：normalizeRequest → 引擎 → buildPublicQuote（只区间口径）。
