@@ -1,0 +1,39 @@
+name: keep-warm
+
+# 保活官网，避免 Render 免费层 15 分钟休眠带来的首次访问冷启动（约 30 秒白屏）。
+#
+# 为什么用 GitHub Actions 而不是 UptimeRobot：仓库是 public，Actions 免费且不限分钟；
+# 而且保活策略写进仓库可审计、可回滚，不依赖第三方账号里的隐形配置。
+#
+# 时间窗口是硬约束，不是随手写的：Render 免费层 750 实例小时/月是**整个 workspace** 的
+# 总额，官网 24/7 常驻就要 744 小时，再叠加引擎按需唤醒就会顶穿，服务被停到下月初。
+# 所以只保活越南时间 07:00–22:55（= UTC 00:00–15:55）这 16 小时：客户活跃时段永远不冷启动，
+# 夜间让它照常睡（约 496 小时/月，给引擎留足余量）。
+#
+# 只打 /api/health 的轻量档（不带 ?deep=1）：deep 会真实探测引擎，等于顺带给引擎保活，
+# 那会把引擎的小时数也烧掉。引擎继续严格按需唤醒，靠 /quote 页的挂载预热兜底。
+
+on:
+  schedule:
+    # UTC 00:00–15:55，每 5 分钟一次 → 越南时间 07:00–22:55
+    - cron: '*/5 0-15 * * *'
+  # 手动补一次（刚改完配置时不用等下一个整点）
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping health endpoint
+        run: |
+          set -o pipefail
+          code=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 90 \
+            https://jiuneng.space/api/health || echo "000")
+          echo "HTTP $code"
+          head -c 400 /tmp/health.json || true
+          # 冷启动时 Render 会先回 502/超时——这正是我们要打醒它的场景，不能让 job 变红。
+          # 只有「连不上」这类真故障才值得在 Actions 里留痕，但也不必因此让 job 失败。
+          if [ "$code" = "000" ]; then
+            echo "::warning::官网无响应（可能正在冷启动或已宕机）"
+          fi
