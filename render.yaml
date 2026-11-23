@@ -29,8 +29,9 @@ services:
     domains:
       - jiuneng.space
       - www.jiuneng.space
-      # 过渡期保留旧子域，DNS 全部切完并验证后再从这里删掉
-      - site.jiuneng.space
+      # ⚠️ 免费层每个服务最多 2 个自定义域名（Included Custom Domains 2/2），所以这里只能留两个。
+      # site.jiuneng.space 已于 2026-11-22 从服务上移除（腾位给 www）。若将来绑付款方式解除限制，
+      # 可以把旧子域加回来；在那之前不要在这里声明第三个，否则 Blueprint 同步会报额度不足。
     envVars:
       - key: NODE_ENV
         value: production
